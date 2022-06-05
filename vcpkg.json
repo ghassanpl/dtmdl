@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "dtmdl",
+  "version": "0.0.1",
+  "dependencies": [
+    "nlohmann-json",
+    "magic-enum",
+
+    "sdl2",
+    "imgui"
+  ],
+
+  "description": [
+    "boost-container-hash",
+    "scnlib",
+    "sqlitecpp",
+    "blend2d"
+  ]
+}
