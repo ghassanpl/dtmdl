@@ -27,6 +27,12 @@
     <ClCompile Include="imgui_impl_sdlrenderer.cpp">
       <Filter>Source Files\External</Filter>
     </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Database.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />
@@ -37,6 +43,12 @@
     </ClInclude>
     <ClInclude Include="imgui_impl_sdlrenderer.h">
       <Filter>Source Files\External</Filter>
+    </ClInclude>
+    <ClInclude Include="Database.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

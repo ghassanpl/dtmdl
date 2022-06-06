@@ -5,6 +5,7 @@
   "dependencies": [
     "nlohmann-json",
     "magic-enum",
+    "outcome",
 
     "sdl2",
     "imgui"
