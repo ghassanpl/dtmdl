@@ -64,52 +64,6 @@ string ValidateTemplateArgument(TemplateParameterQualifier qualifier, TypeDefini
 	return {};
 }
 
-/*
-void TypeChooser(Database& db, TypeReference& ref, function<bool(TypeDefinition const*)> filter = {}, const char* name = "")
-{
-	using namespace ImGui;
-	PushID(&ref);
-	auto current = ref.ToString();
-	if (BeginCombo(name, current.c_str()))
-	{
-		for (auto& type : db.Definitions)
-		{
-			if (!filter || filter(type.get()))
-			{
-				if (Selectable(type->Name.c_str(), type == ref.Type))
-				{
-					ref = TypeReference{ type };
-					ref.TemplateArguments.resize(type->TemplateParameters.size());
-				}
-			}
-		}
-		EndCombo();
-	}
-	if (ref.Type)
-	{
-		Indent(8.0f);
-		size_t i = 0;
-		for (auto& param : ref.Type->TemplateParameters)
-		{
-			PushID(&param);
-			//param.QualifierRequiresCompletedType
-			if (param.Qualifier == TemplateParameterQualifier::Size)
-			{
-				if (!holds_alternative<uint64_t>(ref.TemplateArguments[i]))
-					ref.TemplateArguments[i] = uint64_t{};
-				InputScalar(param.Name.c_str(), ImGuiDataType_U64, &get<uint64_t>(ref.TemplateArguments[i]));
-			}
-			else
-				TypeChooser(db, ref.TemplateArguments[i], fltTemplateArgumentFilter(param.Qualifier), param.Name.c_str());
-			PopID();
-			++i;
-		}
-		Unindent();
-	}
-	PopID();
-}
-*/
-
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
@@ -511,7 +465,7 @@ void EditEnum(Database& db, EnumDefinition* def)
 
 }
 
-Database mDatabase;
+Database mDatabase{"test/db1/"};
 Database* mCurrentDatabase = &mDatabase;
 
 void TypesTab()
@@ -659,6 +613,8 @@ int main(int, char**)
 		ImGui_ImplSDLRenderer_RenderDrawData(ImGui::GetDrawData());
 		SDL_RenderPresent(renderer);
 	}
+
+	mCurrentDatabase->SaveAll();
 
 	// Cleanup
 	ImGui_ImplSDLRenderer_Shutdown();
