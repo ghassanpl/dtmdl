@@ -119,10 +119,7 @@ struct RecordDefinition : TypeDefinition
 
   auto const& Fields() const noexcept { return mFields; }
 
-  string FreshFieldName() const
-  {
-    return "Field1";
-  }
+  string FreshFieldName() const;
 
 protected:
 
@@ -201,7 +198,7 @@ protected:
 
 struct Database
 {
-  auto const& Definitions() const noexcept { return mDefinitions; }
+  auto const& Definitions() const noexcept { return mSchema.Definitions; }
 
   using Def = TypeDefinition const*;
   using Rec = RecordDefinition const*;
@@ -217,32 +214,44 @@ struct Database
   result<void, string> AddNewField(Rec def);
 
   result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
-  result<void, string> ValidateTypeName(Def def, string new_name);
-  result<void, string> ValidateFieldName(Fld def, string new_name);
+  result<void, string> ValidateTypeName(Def def, string const& new_name);
+  result<void, string> ValidateFieldName(Fld def, string const& new_name);
   result<void, string> ValidateFieldType(Fld def, TypeReference const& type);
 
   result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);
-  result<void, string> SetTypeName(Def def, string new_name);
-  result<void, string> SetFieldName(Fld def, string new_name);
+  result<void, string> SetTypeName(Def def, string const& new_name);
+  result<void, string> SetFieldName(Fld def, string const& new_name);
   result<void, string> SetFieldType(Fld def, TypeReference const& type);
 
-  bool IsParentOrChild(Def a, Def b);
+  //bool IsParentOrChild(Def a, Def b);
+  bool IsParent(Def parent, Def potential_child);
 
   Database();
 
 private:
+
+  struct Schema
+  {
+    map<string, unique_ptr<TypeDefinition>, less<>> Definitions;
+    vector<TypeDefinition const*> ChildDefinitionsInOrderOfDependency;
+  };
+
+  struct DataStore
+  {
+
+  };
 
   template <typename T, typename... ARGS>
   T const* AddType(string name, ARGS&&... args)
   {
     auto ptr = unique_ptr<T>(new T{ name, forward<ARGS>(args)... });
     auto result = ptr.get();
-    mDefinitions[name] = move(ptr);
+    mSchema.Definitions[name] = move(ptr);
     return result;
   }
 
   BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params = {}, bool markable = false);
 
-  map<string, unique_ptr<TypeDefinition>, less<>> mDefinitions;
-  vector<TypeDefinition const*> mChildDefinitionsInOrderOfDependency;
+  Schema mSchema;
+  DataStore mStore;
 };
