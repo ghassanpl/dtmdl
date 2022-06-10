@@ -129,8 +129,11 @@ struct FieldDefinition
 
 struct RecordDefinition : TypeDefinition
 {
+	/// TODO: Properties and Methods, maybe
+
 	FieldDefinition const* Field(size_t i) const;
 	FieldDefinition const* Field(string_view name) const;
+	size_t FieldIndexOf(FieldDefinition const* field) const;
 
 	auto const& Fields() const noexcept { return mFields; }
 
@@ -216,22 +219,21 @@ protected:
 
 struct Database
 {
+	using Def = TypeDefinition const*;
+	using Rec = RecordDefinition const*;
+	using Fld = FieldDefinition const*;
 
 	auto const& Definitions() const noexcept { return mSchema.Definitions; }
 
 	TypeDefinition const* ResolveType(string_view name) const;
-
-	using Def = TypeDefinition const*;
-	using Rec = RecordDefinition const*;
-	using Fld = FieldDefinition const*;
 
 	template <typename T>
 	inline constexpr static T* mut(T const* v) noexcept { return const_cast<T*>(v); }
 
 	string FreshTypeName(string_view base) const;
 
+	/// Actions
 	result<StructDefinition const*, string> AddNewStruct();
-
 	result<void, string> AddNewField(Rec def);
 
 	result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
@@ -243,6 +245,17 @@ struct Database
 	result<void, string> SetTypeName(Def def, string const& new_name);
 	result<void, string> SetFieldName(Fld def, string const& new_name);
 	result<void, string> SetFieldType(Fld def, TypeReference const& type);
+
+	result<void, string> SwapFields(Rec def, size_t field_index_a, size_t field_index_b);
+	result<void, string> RotateFields(Rec def, size_t field_index, size_t new_position);
+	result<void, string> SwapFields(Fld field_a, Fld field_b)
+	{
+		AssumingNotEqual(field_a->ParentRecord, field_b->ParentRecord);
+		return SwapFields(field_a->ParentRecord, field_a->ParentRecord->FieldIndexOf(field_a), field_b->ParentRecord->FieldIndexOf(field_b));
+	}
+
+	result<void, string> DeleteField(Fld def);
+	result<void, string> DeleteType(Def type);
 
 	bool IsParent(Def parent, Def potential_child);
 
@@ -270,6 +283,8 @@ private:
 	{
 
 	};
+
+	map<string, DataStore, less<>> mDataStores;
 
 	template <typename T, typename... ARGS>
 	T const* AddType(string name, ARGS&&... args)

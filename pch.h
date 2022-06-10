@@ -16,6 +16,7 @@
 #include <ghassanpl/enum_flags.h>
 #include <ghassanpl/string_ops.h>
 #include <ghassanpl/json_helpers.h>
+#include <ghassanpl/assuming.h>
 
 using namespace outcome_v2_35644f5c;
 

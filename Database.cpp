@@ -167,19 +167,19 @@ result<void, string> Database::ValidateFieldType(Fld def, TypeReference const& t
 
 result<StructDefinition const*, string> Database::AddNewStruct()
 {
-	/// 1. Validation
+	/// Validation
 	
-	/// 2. Schema Change
+	/// Schema Change
 	auto result = AddType<StructDefinition>(FreshTypeName("Struct"));
 	if (!result)
 		return result;
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
+	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewStruct"}, {"name", result->Name()} });
 	
-	/// 5. Save
+	/// Save
 	SaveAll();
 
 	return success();
@@ -187,18 +187,18 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 
 result<void, string> Database::AddNewField(Rec def)
 {
-	/// 1. Validation
+	/// Validation
 
-	/// 2. Schema Change
+	/// Schema Change
 	auto name = def->FreshFieldName();
 	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name));
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
+	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewField"}, {"record", def->Name()}, {"fieldname", name} });
 
-	/// 5. Save
+	/// Save
 	SaveAll();
 
 	return success();
@@ -206,20 +206,20 @@ result<void, string> Database::AddNewField(Rec def)
 
 result<void, string> Database::SetRecordBaseType(Rec def, TypeReference const& type)
 {
-	/// 1. Validation
+	/// Validation
 	auto result = ValidateRecordBaseType(def, type);
 	if (result.has_error())
 		return result;
 
-	/// 2. Schema Change
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetRecordBaseType"}, {"type", def->Name()}, {"basetype", type.ToJSON() }, {"previous", def->BaseType().ToJSON()} });
+
+	/// Schema Change
 	mut(def)->mBaseType = type;
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
-	AddChangeLog(json{ {"action", "SetRecordBaseType"}, {"type", def->Name()}, {"basetype", type.ToJSON() } });
-
-	/// 5. Save
+	/// Save
 	SaveAll();
 
 	return success();
@@ -227,21 +227,20 @@ result<void, string> Database::SetRecordBaseType(Rec def, TypeReference const& t
 
 result<void, string> Database::SetTypeName(Def def, string const& new_name)
 {
-	/// 1. Validation
+	/// Validation
 	auto result = ValidateTypeName(def, new_name);
 	if (result.has_error())
 		return result;
 
-	/// 2. Schema Change
-	auto old_name = def->Name();
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetTypeName"}, {"oldname", def->Name()}, {"newname", new_name } });
+
+	/// Schema Change
 	mut(def)->mName = new_name;
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
-	AddChangeLog(json{ {"action", "SetTypeName"}, {"oldname", old_name}, {"newname", new_name } });
-
-	/// 5. Save
+	/// Save
 	SaveAll();
 
 	return success();
@@ -249,21 +248,20 @@ result<void, string> Database::SetTypeName(Def def, string const& new_name)
 
 result<void, string> Database::SetFieldName(Fld def, string const& new_name)
 {
-	/// 1. Validation
+	/// Validation
 	auto result = ValidateFieldName(def, new_name);
 	if (result.has_error())
 		return result;
 
-	/// 2. Schema Change
-	auto old_name = def->Name;
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetFieldName"}, {"oldname", def->Name}, {"newname", new_name } });
+
+	/// Schema Change
 	mut(def)->Name = new_name;
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
-	AddChangeLog(json{ {"action", "SetFieldName"}, {"oldname", old_name}, {"newname", new_name } });
-
-	/// 5. Save
+	/// Save
 	SaveAll();
 
 	return success();
@@ -271,20 +269,77 @@ result<void, string> Database::SetFieldName(Fld def, string const& new_name)
 
 result<void, string> Database::SetFieldType(Fld def, TypeReference const& type)
 {
-	/// 1. Validation
+	/// Validation
 	auto result = ValidateFieldType(def, type);
 	if (result.has_error())
 		return result;
 
-	/// 2. Schema Change
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetFieldType"}, {"field", def->Name}, {"type", type.ToJSON() }, {"previous", def->FieldType.ToJSON()} });
+
+	/// Schema Change
 	mut(def)->FieldType = type;
 
-	/// 3. DataStore update
+	/// DataStore update
 
-	/// 4. ChangeLog add
-	AddChangeLog(json{ {"action", "SetFieldType"}, {"field", def->Name}, {"type", type.ToJSON()}});
+	/// Save
+	SaveAll();
 
-	/// 5. Save
+	return success();
+}
+
+result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t field_index_b)
+{
+	/// Validation
+	if (field_index_a < def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_a, def->Name()));
+	if (field_index_b < def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_b, def->Name()));
+	
+	/// Schema Change
+	swap(mut(def)->mFields[field_index_a], mut(def)->mFields[field_index_b]);
+	
+	/// DataStore update
+	
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SwapFields"}, {"type", def->Name()}, {"field_a", field_index_a}, {"field_b", field_index_b} });
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::DeleteField(Fld def)
+{
+	/// Validation
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "DeleteField"}, {"type", def->ParentRecord->Name()}, {"field", def->Name}, {"backup", def->ToJSON() } });
+
+	/// Schema Change
+	auto index = def->ParentRecord->FieldIndexOf(def);
+	mut(def->ParentRecord)->mFields.erase(def->ParentRecord->mFields.begin() + index);
+
+	/// DataStore update
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::DeleteType(Def type)
+{
+	/// Validation
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "DeleteType"}, {"type", type->Name()}, {"backup", type->ToJSON() } });
+
+	/// Schema Change
+	mSchema.Definitions.erase(type->Name());
+
+	/// DataStore update
+
+	/// Save
 	SaveAll();
 
 	return success();
@@ -428,6 +483,14 @@ FieldDefinition const* RecordDefinition::Field(string_view name) const
 	return nullptr;
 }
 
+size_t RecordDefinition::FieldIndexOf(FieldDefinition const* field) const
+{
+	for (size_t i = 0; i < mFields.size(); ++i)
+		if (mFields[i].get() == field)
+			return i;
+	return -1;
+}
+
 string RecordDefinition::FreshFieldName() const
 {
 	string candidate = "Field";
@@ -455,6 +518,7 @@ void RecordDefinition::FromJSON(Database const& db, json const& value)
 	{
 		auto new_field = make_unique<FieldDefinition>();
 		new_field->FromJSON(db, field);
+		new_field->ParentRecord = this;
 		mFields.push_back(move(new_field));
 	}
 }

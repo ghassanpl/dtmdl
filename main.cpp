@@ -71,7 +71,7 @@ using EditorFunc = function<void(Database&, EDITING_OBJECT const*, OBJECT_PROPER
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ApplyFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using GetterFunc = function<OBJECT_PROPERTY const&(Database&, EDITING_OBJECT const*)>;
+using GetterFunc = function<OBJECT_PROPERTY const& (Database&, EDITING_OBJECT const*)>;
 
 void Display(Database& db, string const& val) { ImGui::Text("%s", val.c_str()); }
 void Display(Database& db, TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
@@ -138,8 +138,8 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 			InputText("###typename", &name);
 		},
 		&Database::SetTypeName,
-		[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
-	);
+			[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
+		);
 }
 
 bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
@@ -166,8 +166,8 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 			}
 		},
 		&Database::SetRecordBaseType,
-		[](Database& db, RecordDefinition const* def) -> auto const& { return def->BaseType(); }
-	);
+			[](Database& db, RecordDefinition const* def) -> auto const& { return def->BaseType(); }
+		);
 }
 
 bool FieldNameEditor(Database& db, FieldDefinition const* def)
@@ -180,8 +180,8 @@ bool FieldNameEditor(Database& db, FieldDefinition const* def)
 			InputText("###fieldname", &name);
 		},
 		&Database::SetFieldName,
-		[](Database& db, FieldDefinition const* def) -> auto const& { return def->Name; }
-	);
+			[](Database& db, FieldDefinition const* def) -> auto const& { return def->Name; }
+		);
 }
 
 FilterFunc fltTemplateArgumentFilter(TemplateParameterQualifier qualifier)
@@ -195,7 +195,7 @@ FilterFunc fltTemplateArgumentFilter(TemplateParameterQualifier qualifier)
 void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char* label = nullptr)
 {
 	using namespace ImGui;
-	
+
 	PushID(&ref);
 	auto current = ref.ToString();
 	if (label == nullptr)
@@ -256,8 +256,8 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 			TypeChooser(db, current, [&db, field](TypeDefinition const* def) { return !def->IsClass() && !db.IsParent(field->ParentRecord, def); });
 		},
 		&Database::SetFieldType,
-		[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
-	);
+			[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
+		);
 }
 
 /*
@@ -411,6 +411,13 @@ void FieldTypeEditor(Database& db, FieldDefinition const* def)
 }
 */
 
+void CheckError(result<void, string> val)
+{
+
+}
+
+vector<function<void()>> LateExec;
+
 void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 {
 	using namespace ImGui;
@@ -420,8 +427,24 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 	if (Button("Add Field"))
 	{
 		ignore = db.AddNewField(def);
-		//def->Fields.push_back(FieldDefinition{ "field1" });
 	}
+	SameLine();
+
+	Button("Delete Type");
+	if (BeginPopupContextItem("Are you sure you want to delete this type?", 0))
+	{
+		Text("Are you sure you want to delete this type?");
+		if (Button("Yes"))
+		{
+			LateExec.push_back([&db, def] {CheckError(db.DeleteType(def)); });
+			CloseCurrentPopup();
+		}
+		SameLine();
+		if (Button("No"))
+			CloseCurrentPopup();
+		EndPopup();
+	}
+
 	if (BeginTable("Fields", 5))
 	{
 		TableSetupColumn("Name");
@@ -433,6 +456,7 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 		TableHeadersRow();
 
 		TableNextRow();
+		size_t index = 0;
 		for (auto& field : def->Fields())
 		{
 			PushID(&field);
@@ -448,12 +472,27 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 			TableNextColumn();
 			Text("Properties");
 			TableNextColumn();
-			SmallButton("Up"); SameLine();
-			SmallButton("Down"); SameLine();
+
+			BeginDisabled(index == 0);
+			if (SmallButton("Up"))
+				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
+			EndDisabled();
+			SameLine();
+			
+			BeginDisabled(index == def->Fields().size() - 1);
+			if (SmallButton("Down"))
+				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
+			EndDisabled();
+			SameLine();
+			
 			SmallButton("Duplicate"); SameLine();
 			SmallButton("Copy"); SameLine();
-			SmallButton("Delete"); SameLine();
+			if (SmallButton("Delete"))
+				LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
+			SameLine();
+
 			PopID();
+			index++;
 		}
 
 		EndTable();
@@ -465,7 +504,7 @@ void EditEnum(Database& db, EnumDefinition* def)
 
 }
 
-Database mDatabase{"test/db1/"};
+Database mDatabase{ "test/db1/" };
 Database* mCurrentDatabase = &mDatabase;
 
 void TypesTab()
@@ -605,6 +644,10 @@ int main(int, char**)
 		}
 
 		ImGui::End();
+
+		for (auto& exec : LateExec)
+			exec();
+		LateExec.clear();
 
 		// Rendering
 		ImGui::Render();
