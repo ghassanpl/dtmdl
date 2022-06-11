@@ -160,9 +160,119 @@ result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference con
 	return success();
 }
 
+result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param)
+{
+	if (param.Qualifier == TemplateParameterQualifier::Size)
+	{
+		if (holds_alternative<uint64_t>(arg))
+			return success();
+		return failure("template argument must be a size");
+	}
+
+	if (!holds_alternative<TypeReference>(arg))
+		return failure("template argument must be a type");
+
+	auto& arg_type = get<TypeReference>(arg);
+
+	if (!arg_type.Type)
+		return failure("type must be set");
+
+	switch (param.Qualifier)
+	{
+	case TemplateParameterQualifier::AnyType: break;
+	case TemplateParameterQualifier::Struct:
+		if (arg_type->Type() != DefinitionType::Struct)
+			return "must be a struct type";
+		break;
+	case TemplateParameterQualifier::NotClass:
+		if (arg_type->Type() == DefinitionType::Class)
+			return "must be a non-class type";
+		break;
+	case TemplateParameterQualifier::Enum:
+		if (arg_type->Type() != DefinitionType::Enum)
+			return "must be an enum type";
+		break;
+	case TemplateParameterQualifier::Integral:
+	case TemplateParameterQualifier::Floating:
+	case TemplateParameterQualifier::Simple:
+	case TemplateParameterQualifier::Pointer:
+		if (arg_type->Type() != DefinitionType::BuiltIn)
+			return "must be an integral type";
+		else
+		{
+			auto builtin_type = dynamic_cast<BuiltinDefinition const*>(arg_type.Type);
+			if (builtin_type && builtin_type->ApplicableQualifiers().is_set(param.Qualifier) == false)
+				return format("must be a {} type", string_ops::ascii::tolower(magic_enum::enum_name(param.Qualifier)));
+		}
+		break;
+	case TemplateParameterQualifier::Class:
+		if (arg_type->Type() != DefinitionType::Class)
+			return "must be a class type";
+		break;
+	default:
+		throw format("internal error: unimplemented template parameter qualifier `{}`", magic_enum::enum_name(param.Qualifier));
+	}
+
+	return success();
+}
+
 result<void, string> Database::ValidateFieldType(Fld def, TypeReference const& type)
 {
-	return success();
+	if (!type.Type)
+		return failure("field type is invalid");
+
+	if (type.Type->Name() == "void")
+		return failure("field type cannot be void");
+
+	set<TypeDefinition const*> open_types;
+	open_types.insert(def->ParentRecord);
+	auto is_open = [&](TypeDefinition const* type) -> TypeDefinition const* {
+		/// If the type itself is open
+		if (open_types.contains(type)) return type;
+
+		/// If any base type is open
+		auto parent_type = type->BaseType().Type;
+		while (parent_type && parent_type->IsRecord())
+		{
+			if (open_types.contains(parent_type))
+			{
+				/// For performance, insert all types up to the open base type into the open set
+				for (auto t = type; t != parent_type; t = t->BaseType().Type)
+					open_types.insert(t);
+				return parent_type;
+			}
+			parent_type = type->BaseType().Type;
+		}
+		return nullptr;
+	};
+
+	auto check_type = [](this auto& check_type, TypeReference const& type, auto& is_open) -> result<void, string> {
+		if (auto incomplete = is_open(type.Type))
+			return failure(format("{}: type is dependent on an incomplete type: {}", type.ToString(), incomplete->Name()));
+
+		if (type.TemplateArguments.size() < type.Type->TemplateParameters().size())
+			return failure(format("{}: invalid number of template arguments given", type.ToString()));
+
+		for (size_t i = 0; i < type.TemplateArguments.size(); ++i)
+		{
+			auto& arg = type.TemplateArguments[i];
+			auto& param = type.Type->TemplateParameters().at(i);
+			auto result = ValidateTemplateArgument(arg, param);
+			if (result.has_failure())
+				return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+			if (param.MustBeComplete())
+			{
+				if (auto ref = get_if<TypeReference>(&arg))
+				{
+					if (result = check_type(*ref, is_open); result.has_failure())
+						return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+				}
+			}
+		}
+		return success();
+	};
+
+	return check_type(type, is_open);
 }
 
 result<StructDefinition const*, string> Database::AddNewStruct()
@@ -291,8 +401,8 @@ result<void, string> Database::SetFieldType(Fld def, TypeReference const& type)
 result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t field_index_b)
 {
 	/// Validation
-	if (field_index_a < def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_a, def->Name()));
-	if (field_index_b < def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_b, def->Name()));
+	if (field_index_a >= def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_a, def->Name()));
+	if (field_index_b >= def->mFields.size()) return failure(format("field #{} of record {} does not exist", field_index_b, def->Name()));
 	
 	/// Schema Change
 	swap(mut(def)->mFields[field_index_a], mut(def)->mFields[field_index_b]);
@@ -430,21 +540,21 @@ Database::Database(filesystem::path dir)
 		TemplateParameter{ "ENUM", TemplateParameterQualifier::Enum }
 	});
 	auto list = AddNative("list", "::DataModel::NativeTypes::List", vector{
-		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass }
+		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass, TemplateParameterFlags::CanBeIncomplete }
 	}, true);
 	auto arr = AddNative("array", "::DataModel::NativeTypes::Array", vector{
 		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass },
 		TemplateParameter{ "SIZE", TemplateParameterQualifier::Size }
 	}, true);
 	auto ref = AddNative("ref", "::DataModel::NativeTypes::Ref", vector{
-		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class }
+		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
 	}, true);
 	auto own = AddNative("own", "::DataModel::NativeTypes::Own", vector{
-		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class }
+		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
 	}, true);
 
 	auto variant = AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
-		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, true }
+		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
 	}, true);
 
 	if (filesystem::exists(mDirectory / "schema.json"))
@@ -607,7 +717,8 @@ void TemplateParameter::FromJSON(json const& value)
 {
 	Name = value.at("name").get_ref<json::string_t const&>();
 	Qualifier = magic_enum::enum_cast<TemplateParameterQualifier>(value.at("qualifier").get_ref<json::string_t const&>()).value();
-	Multiple = value.at("multiple");
+	string s = value.at("flags");
+	string_ops::split(s, ",", [this](string_view s, bool) { Flags.set(magic_enum::enum_cast<TemplateParameterFlags>(s).value()); });
 }
 
 void FieldDefinition::FromJSON(Database const& db, json const& value)

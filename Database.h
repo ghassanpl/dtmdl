@@ -12,6 +12,7 @@ enum class DefinitionType
 struct TypeDefinition;
 struct Database;
 
+
 struct TypeReference
 {
 	TypeDefinition const* Type = nullptr;
@@ -32,6 +33,8 @@ struct TypeReference
 	void FromJSON(Database const& db, json const& value);
 };
 
+using TemplateArgument = variant<uint64_t, TypeReference>;
+
 inline void to_json(json& j, TypeReference const& v) { j = v.ToJSON(); }
 
 enum class TemplateParameterQualifier
@@ -49,28 +52,25 @@ enum class TemplateParameterQualifier
 	Class,
 };
 
+enum class TemplateParameterFlags
+{
+	Multiple,
+	CanBeIncomplete,
+};
+
 struct TemplateParameter
 {
 	string Name;
 	TemplateParameterQualifier Qualifier{};
-	bool Multiple = false;
-	/// TypeReference DefaultValue{};
+	enum_flags<TemplateParameterFlags> Flags;
+	
+	bool MustBeComplete() const noexcept { return !Flags.contain(TemplateParameterFlags::CanBeIncomplete); }
 
-	inline constexpr bool QualifierRequiresCompletedType() const
-	{
-		switch (Qualifier)
-		{
-		case TemplateParameterQualifier::Size:
-		case TemplateParameterQualifier::Pointer:
-		case TemplateParameterQualifier::Class:
-			return false;
-		}
-		return true;
-	}
-
-	json ToJSON() const { return json::object({ {"name", Name }, {"qualifier", magic_enum::enum_name(Qualifier)}, {"multiple", json::boolean_t{Multiple} } }); }
+	json ToJSON() const { return json::object({ {"name", Name }, {"qualifier", magic_enum::enum_name(Qualifier)}, {"flags", string_ops::join(Flags, ",", [](auto e) { return magic_enum::enum_name(e); })} }); }
 	void FromJSON(json const& value);
 };
+
+result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param);
 
 struct TypeDefinition
 {

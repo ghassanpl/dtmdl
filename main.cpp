@@ -23,47 +23,6 @@ FilterFunc fltNoCycles(Database& db, TypeDefinition const* self, FilterFunc pare
 }
 */
 
-string ValidateTemplateArgument(TemplateParameterQualifier qualifier, TypeDefinition const* arg_type)
-{
-	switch (qualifier)
-	{
-	case TemplateParameterQualifier::AnyType: break;
-	case TemplateParameterQualifier::Struct:
-		if (arg_type->Type() != DefinitionType::Struct)
-			return "must be a struct type";
-		break;
-	case TemplateParameterQualifier::NotClass:
-		if (arg_type->Type() == DefinitionType::Class)
-			return "must be a non-class type";
-		break;
-	case TemplateParameterQualifier::Enum:
-		if (arg_type->Type() != DefinitionType::Enum)
-			return "must be an enum type";
-		break;
-	case TemplateParameterQualifier::Integral:
-	case TemplateParameterQualifier::Floating:
-	case TemplateParameterQualifier::Simple:
-	case TemplateParameterQualifier::Pointer:
-		if (arg_type->Type() != DefinitionType::BuiltIn)
-			return "must be an integral type";
-		else
-		{
-			auto builtin_type = dynamic_cast<BuiltinDefinition const*>(arg_type);
-			if (builtin_type->ApplicableQualifiers().is_set(qualifier) == false)
-				return format("must be a {} type", string_ops::ascii::tolower(magic_enum::enum_name(qualifier)));
-		}
-		break;
-	case TemplateParameterQualifier::Class:
-		if (arg_type->Type() != DefinitionType::Class)
-			return "must be a class type";
-		break;
-	default:
-		throw format("internal error: unimplemented template parameter qualifier `{}`", magic_enum::enum_name(qualifier));
-	}
-
-	return {};
-}
-
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
@@ -184,11 +143,11 @@ bool FieldNameEditor(Database& db, FieldDefinition const* def)
 		);
 }
 
-FilterFunc fltTemplateArgumentFilter(TemplateParameterQualifier qualifier)
+FilterFunc fltTemplateArgumentFilter(TemplateParameter const& param)
 {
-	return [qualifier](TypeDefinition const* def) {
-		auto str = ValidateTemplateArgument(qualifier, def);
-		return str.empty();
+	return [&](TypeDefinition const* def) {
+		auto str = ValidateTemplateArgument(TypeReference{ def }, param);
+		return !str.has_failure();
 	};
 }
 
@@ -235,7 +194,7 @@ void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char
 			{
 				if (holds_alternative<uint64_t>(ref.TemplateArguments[i]))
 					ref.TemplateArguments[i] = TypeReference{};
-				TypeChooser(db, get<TypeReference>(ref.TemplateArguments[i]), fltTemplateArgumentFilter(param.Qualifier), param.Name.c_str());
+				TypeChooser(db, get<TypeReference>(ref.TemplateArguments[i]), fltTemplateArgumentFilter(param), param.Name.c_str());
 			}
 			PopID();
 			++i;
@@ -259,157 +218,6 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 			[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
 		);
 }
-
-/*
-void RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
-{
-	using namespace ImGui;
-	static map<RecordDefinition const*, TypeReference> is_editing;
-
-	PushID(def);
-
-	if (is_editing.contains(def))
-	{
-		auto& current = is_editing[def];
-		//SetNextItemWidth(GetContentRegionAvail().x / 3);
-		if (BeginCombo("Base Type", current.ToString().c_str()))
-		{
-			if (Selectable("[none]"))
-				current = TypeReference{};
-			for (auto& [name, type] : db.Definitions())
-			{
-				if (def->Type() == type->Type() && !db.IsParentOrChild(def, type.get()))
-				{
-					if (Selectable(type->Name().c_str(), type.get() == current.Type))
-						current = TypeReference{ type.get()};
-				}
-			}
-			EndCombo();
-		}
-		if (SmallButton("Apply"))
-		{
-			auto result = db.SetRecordBaseType(def, is_editing[def]);
-			if (result.has_error())
-			{
-				/// TODO: Show error
-			}
-			else
-				is_editing.erase(def);
-		}
-		SameLine();
-		if (SmallButton("Cancel"))
-			is_editing.erase(def);
-	}
-	else
-	{
-		string name = format("Base Type: {}", def->BaseType().ToString());
-		Text("%s", name.c_str()); SameLine();
-		if (SmallButton("Edit"))
-			is_editing[def] = def->BaseType();
-	}
-	PopID();
-}
-
-void FieldNameEditor(Database& db, FieldDefinition const* def)
-{
-	using namespace ImGui;
-	static map<FieldDefinition const*, string> is_editing;
-	if (is_editing.contains(def))
-	{
-		//SetNextItemWidth(GetContentRegionAvail().x / 3);
-
-		if (SmallButton("Apply"))
-		{
-			auto result = db.SetFieldName(def, is_editing[def]);
-			if (result.has_error())
-			{
-				/// TODO: Show error
-			}
-			else
-				is_editing.erase(def);
-		}
-		SameLine();
-		if (SmallButton("Cancel"))
-			is_editing.erase(def);
-	}
-	else
-	{
-		Text("%s", def->Name.c_str()); SameLine();
-		if (SmallButton("Edit"))
-			is_editing[def] = def->Name;
-	}
-}
-
-void FieldTypeEditor(Database& db, FieldDefinition const* def)
-{
-	using namespace ImGui;
-	static map<FieldDefinition const*, TypeReference> is_editing;
-
-	if (is_editing.contains(def))
-	{
-		auto& current = is_editing[def];
-		PushID(def);
-		if (BeginCombo("", current.ToString().c_str()))
-		{
-			for (auto& [name, type] : db.Definitions())
-			{
-				if (!db.IsParentOrChild(def->ParentRecord, type.get()))
-				{
-					if (Selectable(type->Name().c_str(), type.get() == current.Type))
-						current = TypeReference{ type.get() };
-				}
-			}
-			EndCombo();
-		}
-		#if 0
-		if (ref.Type)
-		{
-			Indent(8.0f);
-			size_t i = 0;
-			for (auto& param : ref.Type->TemplateParameters)
-			{
-				PushID(&param);
-				//param.QualifierRequiresCompletedType
-				if (param.Qualifier == TemplateParameterQualifier::Size)
-				{
-					if (!holds_alternative<uint64_t>(ref.TemplateArguments[i]))
-						ref.TemplateArguments[i] = uint64_t{};
-					InputScalar(param.Name.c_str(), ImGuiDataType_U64, &get<uint64_t>(ref.TemplateArguments[i]));
-				}
-				else
-					TypeChooser(db, ref.TemplateArguments[i], fltTemplateArgumentFilter(param.Qualifier), param.Name.c_str());
-				PopID();
-				++i;
-			}
-			Unindent();
-		}
-		#endif
-
-		if (SmallButton("Apply"))
-		{
-			auto result = db.SetFieldType(def, is_editing[def]);
-			if (result.has_error())
-			{
-				/// TODO: Show error
-			}
-			else
-				is_editing.erase(def);
-		}
-		SameLine();
-		if (SmallButton("Cancel"))
-			is_editing.erase(def);
-		PopID();
-	}
-	else
-	{
-		string name = def->FieldType.ToString();
-		Text("%s", name.c_str()); SameLine();
-		if (SmallButton("Edit"))
-			is_editing[def] = def->FieldType;
-	}
-	//TypeChooser<true>(db, def->BaseType(), fltNoCycles(db, def, def->IsStruct() ? fltAnyStruct : fltAnyClass));
-}
-*/
 
 void CheckError(result<void, string> val)
 {
@@ -436,7 +244,7 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 		Text("Are you sure you want to delete this type?");
 		if (Button("Yes"))
 		{
-			LateExec.push_back([&db, def] {CheckError(db.DeleteType(def)); });
+			LateExec.push_back([&db, def] { CheckError(db.DeleteType(def)); });
 			CloseCurrentPopup();
 		}
 		SameLine();
@@ -487,8 +295,20 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 			
 			SmallButton("Duplicate"); SameLine();
 			SmallButton("Copy"); SameLine();
-			if (SmallButton("Delete"))
-				LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
+			SmallButton("Delete");
+			if (BeginPopupContextItem("Are you sure you want to delete this field?", 0))
+			{
+				Text("Are you sure you want to delete this field?");
+				if (Button("Yes"))
+				{
+					LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
+					CloseCurrentPopup();
+				}
+				SameLine();
+				if (Button("No"))
+					CloseCurrentPopup();
+				EndPopup();
+			}
 			SameLine();
 
 			PopID();
