@@ -44,6 +44,13 @@ bool GenericEditor(const char* id, Database& db, E const* def, ValidateFunc<E, P
 	PushID(id);
 	PushID(def);
 
+	if (auto it = is_editing.find(def); it == is_editing.end())
+	{
+		auto const& val = getter(db, def);
+		if (validate(db, def, val).has_error())
+			is_editing[def] = val;
+	}
+
 	if (auto it = is_editing.find(def); it != is_editing.end())
 	{
 		editor(db, def, it->second);
@@ -113,7 +120,7 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 			{
 				if (Selectable("[none]", current.Type == nullptr))
 					current = TypeReference{};
-				for (auto& [name, type] : db.Definitions())
+				for (auto& type : db.Definitions())
 				{
 					if (def->Type() == type->Type() && !db.IsParent(def, type.get()))
 					{
@@ -164,11 +171,11 @@ void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char
 	}
 	if (BeginCombo(label, current.c_str()))
 	{
-		for (auto& [name, type] : db.Definitions())
+		for (auto& type : db.Definitions())
 		{
 			if (!filter || filter(type.get()))
 			{
-				if (Selectable(name.c_str(), type.get() == ref.Type))
+				if (Selectable(type->Name().c_str(), type.get() == ref.Type))
 				{
 					ref = TypeReference{ type.get() };
 				}
@@ -215,7 +222,7 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 			TypeChooser(db, current, [&db, field](TypeDefinition const* def) { return !def->IsClass() && !db.IsParent(field->ParentRecord, def); });
 		},
 		&Database::SetFieldType,
-			[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
+		[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
 		);
 }
 
@@ -274,7 +281,6 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 			TableNextColumn();
 			SetNextItemWidth(GetContentRegionAvail().x);
 			FieldTypeEditor(db, field.get());
-			//TypeChooser(db, field.FieldType, fltNoCycles(db, def));
 			TableNextColumn();
 			Text("Initial Value");
 			TableNextColumn();
@@ -337,7 +343,7 @@ void TypesTab()
 	Button("Add Enum"); SameLine();
 	Text("|");
 
-	for (auto& [name, def] : mCurrentDatabase->Definitions())
+	for (auto& def : mCurrentDatabase->Definitions())
 	{
 		PushID(def.get());
 		if (auto strukt = dynamic_cast<StructDefinition*>(def.get()))
@@ -364,21 +370,34 @@ void TypesTab()
 		PopID();
 	}
 }
+
 void DataTab()
 {
 
 }
+
 void InterfacesTab()
 {
 
 }
+
 void DisplaysTab()
 {
 
 }
+
 void ScriptingTab()
 {
 
+}
+
+void PropertiesTab()
+{
+	using namespace ImGui;
+	auto dir = mCurrentDatabase->Directory().string();
+	LabelText("Directory", "%s", dir.c_str());
+
+	InputText("Namespace", &mCurrentDatabase->Namespace);
 }
 
 int main(int, char**)
@@ -458,6 +477,11 @@ int main(int, char**)
 			if (ImGui::BeginTabItem("Scripting"))
 			{
 				ScriptingTab();
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Properties"))
+			{
+				PropertiesTab();
 				ImGui::EndTabItem();
 			}
 			ImGui::EndTabBar();

@@ -4,86 +4,11 @@
 
 #include <ghassanpl/wilson.h>
 
-string to_string(TypeReference const& tr)
-{
-	return tr.ToString();
-}
-
-string TypeReference::ToString() const
-{
-	if (!Type)
-		return "[none]";
-
-	string base = Type->Name();
-	if (TemplateArguments.size())
-	{
-		base += '<';
-		bool first = true;
-		for (auto& arg : TemplateArguments)
-		{
-			if (!first)
-				base += ", ";
-			base += visit([](auto const& val) { return to_string(val); }, arg);
-			first = false;
-		}
-		base += '>';
-	}
-	return base;
-}
-
-json TypeReference::ToJSON() const
-{
-	if (!Type)
-		return json{};
-	json result = json::object();
-	result["name"] = Type->Name();
-	if (TemplateArguments.size())
-	{
-		auto& args = result["args"] = json::array();
-		for (auto& arg : TemplateArguments)
-			visit([&args](auto const& val) { args.push_back(val); }, arg);
-	}
-	return result;
-}
-
-void TypeReference::FromJSON(Database const& db, json const& value)
-{
-	TemplateArguments.clear();
-	if (value.is_null())
-	{
-		Type = {};
-	}
-	else
-	{
-		auto& type = value.get_ref<json::object_t const&>();
-		Type = db.ResolveType(type.at("name"));
-		if (!Type)
-			throw std::runtime_error(format("type '{}' not found", (string)type.at("name")));
-
-		if (auto it = type.find("args"); it != type.end())
-		{
-			TemplateArguments.clear();
-			for (auto& arg : it->second.get_ref<json::array_t const&>())
-			{
-				if (arg.is_number())
-					TemplateArguments.emplace_back((uint64_t)arg);
-				else
-				{
-					TypeReference ref; 
-					ref.FromJSON(db, arg);
-					TemplateArguments.push_back(move(ref));
-				}
-			}
-		}
-	}
-}
-
-TypeReference::TypeReference(TypeDefinition const* value) noexcept : Type(value), TemplateArguments(value ? value->TemplateParameters().size() : 0) { }
-
 TypeDefinition const* Database::ResolveType(string_view name) const
 {
-	if (auto it = mSchema.Definitions.find(name); it != mSchema.Definitions.end())
-		return it->second.get();
+	for (auto& def : mSchema.Definitions)
+		if (def->Name() == name)
+			return def.get();
 	return nullptr;
 }
 
@@ -91,7 +16,7 @@ string Database::FreshTypeName(string_view base) const
 {
 	string candidate = string{ base };
 	size_t num = 1;
-	while (mSchema.Definitions.contains(candidate))
+	while (ResolveType(candidate))
 		candidate = format("{}{}", base, num++);
 	return candidate;
 }
@@ -129,10 +54,10 @@ result<void, string> Database::ValidateTypeName(Def def, string const& new_name)
 	if (auto result = ValidateIdentifierName(new_name); result.has_error())
 		return result;
 
-	auto it = mSchema.Definitions.find(new_name);
-	if (it == mSchema.Definitions.end())
+	auto type = ResolveType(new_name);
+	if (!type)
 		return success();
-	if (it->second.get() == def)
+	if (type == def)
 		return success();
 	return failure("a type with that name already exists");
 }
@@ -221,8 +146,7 @@ result<void, string> Database::ValidateFieldType(Fld def, TypeReference const& t
 	if (!type.Type)
 		return failure("field type is invalid");
 
-	if (type.Type->Name() == "void")
-		return failure("field type cannot be void");
+	//if (type.Type->Name() == "void") return failure("field type cannot be void");
 
 	set<TypeDefinition const*> open_types;
 	open_types.insert(def->ParentRecord);
@@ -445,7 +369,8 @@ result<void, string> Database::DeleteType(Def type)
 	AddChangeLog(json{ {"action", "DeleteType"}, {"type", type->Name()}, {"backup", type->ToJSON() } });
 
 	/// Schema Change
-	mSchema.Definitions.erase(type->Name());
+	auto it = ranges::find_if(mSchema.Definitions, [type](auto& def) { return def.get() == type; });
+	mSchema.Definitions.erase(it);
 
 	/// DataStore update
 
@@ -470,44 +395,6 @@ bool Database::IsParent(Def parent, Def potential_child)
 	return false;
 }
 
-/*
-bool Database::IsParentOrChild(TypeDefinition const* a, TypeDefinition const* b)
-{
-	if (a == b)
-		return true;
-	if ((a && !a->IsRecord()) || (b && !b->IsRecord()))
-		return false;
-	//if (!a->mBaseType.Type && !b->mBaseType.Type)
-		//return false;
-	auto type_a = a;/// ->mBaseType.Type;
-	auto type_b = b;/// ->mBaseType.Type;
-
-	while (type_a)
-	{
-		if (type_a == type_b)
-			return true;
-		if (type_a->mBaseType.Type)
-			type_a = type_a->mBaseType.Type;
-		else
-			break;
-	}
-
-	type_a = a;/// ->mBaseType.Type;
-
-	while (type_b)
-	{
-		if (type_a == type_b)
-			return true;
-		if (type_b->mBaseType.Type)
-			type_b = type_b->mBaseType.Type;
-		else
-			break;
-	}
-
-	return false;
-}
-*/
-
 Database::Database(filesystem::path dir)
 {
 	if (filesystem::exists(dir) && !filesystem::is_directory(dir))
@@ -522,7 +409,7 @@ Database::Database(filesystem::path dir)
 
 	mChangeLog.open(mDirectory / "changelog.wilson", ios::app|ios::out);
 
-	AddNative("void", "::DataModel::NativeTypes::Void");
+	mVoid = AddNative("void", "::DataModel::NativeTypes::Void");
 	AddNative("f32", "float");
 	AddNative("f64", "double");
 	AddNative("i8", "int8_t");
@@ -562,6 +449,9 @@ Database::Database(filesystem::path dir)
 		LoadSchema(ghassanpl::load_json_file(mDirectory / "schema.json"));
 	}
 
+	AddFormatPlugin(make_unique<JSONSchemaFormat>());
+	AddFormatPlugin(make_unique<CppDeclarationFormat>());
+
 	SaveAll();
 }
 
@@ -572,65 +462,30 @@ void Database::AddChangeLog(json log)
 
 void Database::SaveAll()
 {
+	/*
 	ghassanpl::save_json_file(mDirectory / "schema.json", SaveSchema());
 	ghassanpl::save_text_file(mDirectory / "header.hpp", "/// yay");
+	*/
+	for (auto& [name, plugin] : mFormatPlugins)
+	{
+		ghassanpl::save_text_file(mDirectory / plugin->ExportFileName(), plugin->Export(*this));
+	}
+
 	ghassanpl::save_text_file(mDirectory / "wilson_data.wilson", "");
 	mChangeLog.flush();
+}
+
+TypeDefinition* Database::ResolveType(string_view name)
+{
+	for (auto& def : mSchema.Definitions)
+		if (def->Name() == name)
+			return def.get();
+	return nullptr;
 }
 
 BuiltinDefinition const* Database::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable)
 {
 	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable);
-}
-
-FieldDefinition const* RecordDefinition::Field(string_view name) const
-{
-	for (auto& field : mFields)
-	{
-		if (field->Name == name)
-			return field.get();
-	}
-	return nullptr;
-}
-
-size_t RecordDefinition::FieldIndexOf(FieldDefinition const* field) const
-{
-	for (size_t i = 0; i < mFields.size(); ++i)
-		if (mFields[i].get() == field)
-			return i;
-	return -1;
-}
-
-string RecordDefinition::FreshFieldName() const
-{
-	string candidate = "Field";
-	size_t num = 1;
-	while (Field(candidate))
-		candidate = format("Field{}", num++);
-	return candidate;
-}
-
-json RecordDefinition::ToJSON() const
-{
-	json result = TypeDefinition::ToJSON();
-	auto& fields = result["fields"] = json::array();
-	for (auto& field : mFields)
-		fields.push_back(field->ToJSON());
-	return result;
-}
-
-void RecordDefinition::FromJSON(Database const& db, json const& value)
-{
-	TypeDefinition::FromJSON(db, value);
-	mFields.clear();
-	auto& fields = value.at("fields").get_ref<json::array_t const&>();
-	for (auto& field : fields)
-	{
-		auto new_field = make_unique<FieldDefinition>();
-		new_field->FromJSON(db, field);
-		new_field->ParentRecord = this;
-		mFields.push_back(move(new_field));
-	}
 }
 
 json Database::SaveSchema() const
@@ -639,19 +494,19 @@ json Database::SaveSchema() const
 	result["version"] = 1;
 	{
 		auto& types = result["types"] = json::object();
-		for (auto& [name, type] : mSchema.Definitions)
+		for (auto& type : mSchema.Definitions)
 		{
 			if (!type->IsBuiltIn())
-				types[name] = magic_enum::enum_name(type->Type());
+				types[type->Name()] = magic_enum::enum_name(type->Type());
 		}
 	}
 
 	{
 		auto& types = result["typedesc"] = json::object();
-		for (auto& [name, type] : mSchema.Definitions)
+		for (auto& type : mSchema.Definitions)
 		{
 			if (!type->IsBuiltIn())
-				types[name] = type->ToJSON();
+				types[type->Name()] = type->ToJSON();
 		}
 	}
 
@@ -666,64 +521,34 @@ void Database::LoadSchema(json const& from)
 	if (!(version == 1))
 		throw std::runtime_error("invalid schema version number");
 
+	std::erase_if(mSchema.Definitions, [](auto& type) { return !type->IsBuiltIn(); });
+
 	for (auto&& [name, type] : schema.at("types").get_ref<json::object_t const&>())
 	{
-		auto& type_def = mSchema.Definitions[name];
-		type_def.reset();
+		//auto& type_def = mSchema.Definitions.emplace_back();
 		auto type_type = magic_enum::enum_cast<DefinitionType>(type.get_ref<json::string_t const&>()).value();
 		switch (type_type)
 		{
-		case DefinitionType::Class: type_def = unique_ptr<ClassDefinition>{ new ClassDefinition(name) }; break;
-		case DefinitionType::Struct: type_def = unique_ptr<StructDefinition>{ new StructDefinition(name) }; break;
-		case DefinitionType::Enum: type_def = unique_ptr<EnumDefinition>{ new EnumDefinition(name) }; break;
+		case DefinitionType::Class: AddType<ClassDefinition>(name); break;//type_def = unique_ptr<ClassDefinition>{ new ClassDefinition(name) }; break;
+		case DefinitionType::Struct: AddType<StructDefinition>(name); break;//type_def = unique_ptr<StructDefinition>{ new StructDefinition(name) }; break;
+		case DefinitionType::Enum: AddType<EnumDefinition>(name); break;//type_def = unique_ptr<EnumDefinition>{ new EnumDefinition(name) }; break;
+		default:
+			throw std::runtime_error(format("invalid type definition type: {}", type.get_ref<json::string_t const&>()));
 		}
 	}
 
 	for (auto&& [name, typedesc] : schema.at("typedesc").get_ref<json::object_t const&>())
 	{
-		auto& type_def = mSchema.Definitions.at(name);
+		auto type_def = ResolveType(name);
+		if (!type_def)
+			throw std::runtime_error(format("invalid type defined: {}", name));
 		type_def->FromJSON(*this, typedesc);
 	}
 }
 
-json TypeDefinition::ToJSON() const
+void Database::AddFormatPlugin(unique_ptr<FormatPlugin> plugin)
 {
-	json result = json::object();
-	result["name"] = mName;
-	result["base"] = mBaseType;
-	if (mTemplateParameters.size())
-	{
-		auto& params = result["params"] = json::array();
-		for (auto& param : mTemplateParameters)
-			params.push_back(param.ToJSON());
-	}
-	return result;
-}
-
-void TypeDefinition::FromJSON(Database const& db, json const& value)
-{
-	mName = value.at("name").get_ref<json::string_t const&>();
-	mBaseType.FromJSON(db, value.at("base"));
-	if (auto it = value.find("params"); it != value.end())
-	{
-		mTemplateParameters.clear();
-		auto& params = it->get_ref<json::array_t const&>();
-		for (auto& param : params)
-			mTemplateParameters.emplace_back().FromJSON(param);
-	}
-}
-
-void TemplateParameter::FromJSON(json const& value)
-{
-	Name = value.at("name").get_ref<json::string_t const&>();
-	Qualifier = magic_enum::enum_cast<TemplateParameterQualifier>(value.at("qualifier").get_ref<json::string_t const&>()).value();
-	string s = value.at("flags");
-	string_ops::split(s, ",", [this](string_view s, bool) { Flags.set(magic_enum::enum_cast<TemplateParameterFlags>(s).value()); });
-}
-
-void FieldDefinition::FromJSON(Database const& db, json const& value)
-{
-	Name = value.at("name").get_ref<json::string_t const&>();
-	FieldType.FromJSON(db, value.at("type"));
-	InitialValue = value.at("initial");
+	if (!plugin) return;
+	auto name = plugin->FormatName();
+	mFormatPlugins[name] = move(plugin);
 }
