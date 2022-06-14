@@ -8,7 +8,9 @@
     "outcome",
 
     "sdl2",
-    "imgui"
+    "imgui",
+
+    "kubazip"
   ],
 
   "description": [

@@ -50,6 +50,8 @@ struct Database
 	Database(filesystem::path dir);
 
 	void SaveAll();
+	void CreateBackup();
+	void CreateBackup(filesystem::path in_directory);
 
 	auto const& Directory() const noexcept { return mDirectory; }
 	auto const& Schema() const noexcept { return mSchema; }
@@ -85,6 +87,38 @@ private:
 
 	::Schema mSchema;
 	map<string, DataStore, less<>> mDataStores;
+
+	struct TypeUsage
+	{
+		RecordDefinition const* Record;
+		size_t FieldIndex;
+		TypeReference* Reference;
+	};
+
+	struct TypeUsageList
+	{
+		vector<TypeDefinition const*> BaseTypes;
+		vector<TypeUsage> FieldUsages;
+
+		template <typename CALLBACK>
+		void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference)
+		{
+			if (start_reference.Type == type)
+				callback(&start_reference);
+			for (auto& templ : start_reference.TemplateArguments)
+				if (auto arg = get_if<TypeReference>(&templ))
+					LocateTypeReference(references, type, *arg);
+		}
+
+		void LocateTypeReference(TypeDefinition const* type, FieldDefinition* def)
+		{
+			LocateTypeReference([&, this](TypeReference* ref) {
+				FieldUsages.emplace_back(def->ParentRecord, def->ParentRecord->FieldIndexOf(def), ref);
+			}, type, def->FieldType);
+		}
+	};
+
+	TypeUsageList LocateTypeReferences(Def type);
 
 	result<void, string> CheckDataStore(function<result<void,string>(DataStore const&)> validaate_func);
 	void UpdateDataStore(function<void(DataStore&)> update_func);

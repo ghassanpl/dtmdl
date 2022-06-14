@@ -71,6 +71,8 @@ struct TemplateParameter
 
 result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param);
 
+struct RecordDefinition;
+
 struct TypeDefinition
 {
 	virtual ~TypeDefinition() noexcept = default;
@@ -82,6 +84,8 @@ struct TypeDefinition
 	bool IsRecord() const noexcept { return Type() == DefinitionType::Struct || Type() == DefinitionType::Class; }
 	bool IsBuiltIn() const noexcept { return Type() == DefinitionType::BuiltIn; }
 	bool IsEnum() const noexcept { return Type() == DefinitionType::Enum; }
+
+	RecordDefinition const* AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
 
 	auto const& Name() const noexcept { return mName; }
 	auto const& BaseType() const noexcept { return mBaseType; }
@@ -112,8 +116,6 @@ protected:
 	}
 
 };
-
-struct RecordDefinition;
 
 struct FieldDefinition
 {

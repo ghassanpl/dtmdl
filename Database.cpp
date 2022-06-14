@@ -75,6 +75,7 @@ result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference con
 {
 	if (IsParent(def, type.Type))
 		return failure("cycle in base types");
+	/// TODO: Check for shadowing fields
 	return success();
 }
 
@@ -381,9 +382,28 @@ result<void, string> Database::DeleteField(Fld def)
 	return success();
 }
 
+Database::TypeUsageList Database::LocateTypeReferences(Def type)
+{
+	Database::TypeUsageList list;
+	for (auto& def : mSchema.Definitions)
+	{
+		if (def->BaseType().Type == type)
+			list.BaseTypes.push_back(def.get());
+
+		if (auto record = def->AsRecord())
+		{
+			for (auto& field : record->Fields())
+				list.LocateTypeReference(type, field.get());
+		}
+	}
+	return list;
+}
+
 result<void, string> Database::DeleteType(Def type)
 {
 	/// Validation
+	auto usage_list = LocateTypeReferences(type);
+
 	auto validator = [type](DataStore const& store) -> result<void, string> {
 		if (store.HasTypeData(type->Name()))
 			return format("type {} has data", type->Name());
@@ -490,6 +510,21 @@ Database::Database(filesystem::path dir)
 void Database::AddChangeLog(json log)
 {
 	mChangeLog << ghassanpl::to_wilson_string(log) << "\n";
+}
+
+void Database::CreateBackup()
+{
+	CreateBackup(filesystem::absolute(mDirectory).parent_path());
+}
+
+void Database::CreateBackup(filesystem::path in_directory)
+{
+	mChangeLog.flush();
+	
+	for (auto it = filesystem::directory_iterator{ absolute(mDirectory) }; it != filesystem::directory_iterator{}; ++it)
+	{
+		/// TODO: Add file to zip
+	}
 }
 
 void Database::SaveAll()
