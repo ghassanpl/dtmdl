@@ -84,6 +84,9 @@ void CppDeclarationFormat::WriteEnum(SimpleOutputter& out, Database const& db, E
 
 string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition const* type)
 {
+	if (!type)
+		return {};
+
 	if (!type->IsBuiltIn())
 		return format("{}::{}", FormatNamespace(db), type->Name());
 	

@@ -3,20 +3,13 @@
 #include "Database.h"
 
 #include <ghassanpl/wilson.h>
-
-TypeDefinition const* Database::ResolveType(string_view name) const
-{
-	for (auto& def : mSchema.Definitions)
-		if (def->Name() == name)
-			return def.get();
-	return nullptr;
-}
+#include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
 
 string Database::FreshTypeName(string_view base) const
 {
 	string candidate = string{ base };
 	size_t num = 1;
-	while (ResolveType(candidate))
+	while (mSchema.ResolveType(candidate))
 		candidate = format("{}{}", base, num++);
 	return candidate;
 }
@@ -54,7 +47,7 @@ result<void, string> Database::ValidateTypeName(Def def, string const& new_name)
 	if (auto result = ValidateIdentifierName(new_name); result.has_error())
 		return result;
 
-	auto type = ResolveType(new_name);
+	auto type = mSchema.ResolveType(new_name);
 	if (!type)
 		return success();
 	if (type == def)
@@ -209,6 +202,9 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 		return result;
 
 	/// DataStore update
+	UpdateDataStore([name = result->Name()](DataStore& store) {
+		store.AddNewStruct(name);
+	});
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewStruct"}, {"name", result->Name()} });
@@ -225,9 +221,12 @@ result<void, string> Database::AddNewField(Rec def)
 
 	/// Schema Change
 	auto name = def->FreshFieldName();
-	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name));
+	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name, TypeReference{ mVoid }));
 
 	/// DataStore update
+	UpdateDataStore([record_name = def->Name(), &name](DataStore& store) {
+		store.AddNewField(record_name, name);
+	});
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewField"}, {"record", def->Name()}, {"fieldname", name} });
@@ -252,6 +251,7 @@ result<void, string> Database::SetRecordBaseType(Rec def, TypeReference const& t
 	mut(def)->mBaseType = type;
 
 	/// DataStore update
+	/// TODO
 
 	/// Save
 	SaveAll();
@@ -270,9 +270,13 @@ result<void, string> Database::SetTypeName(Def def, string const& new_name)
 	AddChangeLog(json{ {"action", "SetTypeName"}, {"oldname", def->Name()}, {"newname", new_name } });
 
 	/// Schema Change
+	auto old_name = def->Name();
 	mut(def)->mName = new_name;
 
 	/// DataStore update
+	UpdateDataStore([&](DataStore& store) {
+		store.SetTypeName(old_name, new_name);
+	});
 
 	/// Save
 	SaveAll();
@@ -288,12 +292,16 @@ result<void, string> Database::SetFieldName(Fld def, string const& new_name)
 		return result;
 
 	/// ChangeLog add
-	AddChangeLog(json{ {"action", "SetFieldName"}, {"oldname", def->Name}, {"newname", new_name } });
+	AddChangeLog(json{ {"action", "SetFieldName"}, {"record", def->ParentRecord->Name()}, {"oldname", def->Name}, {"newname", new_name}});
 
 	/// Schema Change
+	auto old_name = def->Name;
 	mut(def)->Name = new_name;
 
 	/// DataStore update
+	UpdateDataStore([&](DataStore& store) {
+		store.SetFieldName(def->ParentRecord->Name(), old_name, new_name);
+	});
 
 	/// Save
 	SaveAll();
@@ -309,12 +317,13 @@ result<void, string> Database::SetFieldType(Fld def, TypeReference const& type)
 		return result;
 
 	/// ChangeLog add
-	AddChangeLog(json{ {"action", "SetFieldType"}, {"field", def->Name}, {"type", type.ToJSON() }, {"previous", def->FieldType.ToJSON()} });
+	AddChangeLog(json{ {"action", "SetFieldType"}, {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"type", type.ToJSON() }, {"previous", def->FieldType.ToJSON()} });
 
 	/// Schema Change
 	mut(def)->FieldType = type;
 
 	/// DataStore update
+	/// TODO
 
 	/// Save
 	SaveAll();
@@ -332,9 +341,10 @@ result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t 
 	swap(mut(def)->mFields[field_index_a], mut(def)->mFields[field_index_b]);
 	
 	/// DataStore update
+	/// No need to update datastore, it doesn't care about field order
 	
 	/// ChangeLog add
-	AddChangeLog(json{ {"action", "SwapFields"}, {"type", def->Name()}, {"field_a", field_index_a}, {"field_b", field_index_b} });
+	AddChangeLog(json{ {"action", "SwapFields"}, {"record", def->Name()}, {"field_a", field_index_a}, {"field_b", field_index_b} });
 
 	/// Save
 	SaveAll();
@@ -345,15 +355,25 @@ result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t 
 result<void, string> Database::DeleteField(Fld def)
 {
 	/// Validation
+	auto validator = [def](DataStore const& store) -> result<void, string> { 
+		if (store.HasFieldData(def->ParentRecord->Name(), def->Name)) 
+			return format("field {}.{} has data", def->ParentRecord->Name(), def->Name); 
+		return success(); 
+	};
+	if (auto res = CheckDataStore(validator); res.has_error())
+		return move(res).as_failure();
 
 	/// ChangeLog add
-	AddChangeLog(json{ {"action", "DeleteField"}, {"type", def->ParentRecord->Name()}, {"field", def->Name}, {"backup", def->ToJSON() } });
+	AddChangeLog(json{ {"action", "DeleteField"},  {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"backup", def->ToJSON() } });
+
+	/// DataStore update
+	UpdateDataStore([def](DataStore& store) {
+		store.DeleteField(def->ParentRecord->Name(), def->Name);
+	});
 
 	/// Schema Change
 	auto index = def->ParentRecord->FieldIndexOf(def);
 	mut(def->ParentRecord)->mFields.erase(def->ParentRecord->mFields.begin() + index);
-
-	/// DataStore update
 
 	/// Save
 	SaveAll();
@@ -364,15 +384,25 @@ result<void, string> Database::DeleteField(Fld def)
 result<void, string> Database::DeleteType(Def type)
 {
 	/// Validation
+	auto validator = [type](DataStore const& store) -> result<void, string> {
+		if (store.HasTypeData(type->Name()))
+			return format("type {} has data", type->Name());
+		return success();
+	};
+	if (auto res = CheckDataStore(validator); res.has_error())
+		return move(res).as_failure();
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "DeleteType"}, {"type", type->Name()}, {"backup", type->ToJSON() } });
 
+	/// DataStore update
+	UpdateDataStore([type](DataStore& store) {
+		store.DeleteType(type->Name());
+	});
+
 	/// Schema Change
 	auto it = ranges::find_if(mSchema.Definitions, [type](auto& def) { return def.get() == type; });
 	mSchema.Definitions.erase(it);
-
-	/// DataStore update
 
 	/// Save
 	SaveAll();
@@ -444,13 +474,15 @@ Database::Database(filesystem::path dir)
 		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
 	}, true);
 
+	AddFormatPlugin(make_unique<JSONSchemaFormat>());
+	AddFormatPlugin(make_unique<CppDeclarationFormat>());
+
+	mDataStores.emplace("main", DataStore(*this));
+
 	if (filesystem::exists(mDirectory / "schema.json"))
 	{
 		LoadSchema(ghassanpl::load_json_file(mDirectory / "schema.json"));
 	}
-
-	AddFormatPlugin(make_unique<JSONSchemaFormat>());
-	AddFormatPlugin(make_unique<CppDeclarationFormat>());
 
 	SaveAll();
 }
@@ -462,30 +494,61 @@ void Database::AddChangeLog(json log)
 
 void Database::SaveAll()
 {
+	/// TODO: This
 	/*
-	ghassanpl::save_json_file(mDirectory / "schema.json", SaveSchema());
-	ghassanpl::save_text_file(mDirectory / "header.hpp", "/// yay");
-	*/
+	auto result = ValidateAll();
+	if (result.has_error())
+		return result;
+		*/
+
 	for (auto& [name, plugin] : mFormatPlugins)
 	{
 		ghassanpl::save_text_file(mDirectory / plugin->ExportFileName(), plugin->Export(*this));
 	}
 
-	ghassanpl::save_text_file(mDirectory / "wilson_data.wilson", "");
-	mChangeLog.flush();
-}
+	for (auto& [name, store] : mDataStores)
+	{
+		std::ofstream out{ mDirectory / format("{}_datastore.wilson", name) };
+		out.exceptions(std::ios::badbit | std::ios::failbit);
+		to_wilson_stream(out, store.Storage);
+	}
 
-TypeDefinition* Database::ResolveType(string_view name)
-{
-	for (auto& def : mSchema.Definitions)
-		if (def->Name() == name)
-			return def.get();
-	return nullptr;
+	mChangeLog.flush();
 }
 
 BuiltinDefinition const* Database::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable)
 {
 	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable);
+}
+
+result<void, string> Database::CheckDataStore(function<result<void, string>(DataStore const&)> validate_safety_func)
+{
+	map<string, string> safety_concerns;
+	for (auto& [name, store] : mDataStores)
+	{
+		if (auto result = validate_safety_func(store); result.has_error())
+		{
+			safety_concerns[name] = result.error();
+		}
+	}
+
+	if (!safety_concerns.empty())
+	{
+		string msg = format("There is data in the data stores which will be lost or corrupted if you perform this change:\n\n{}\n\nAre you sure you want to perform this change?",
+			string_ops::join(safety_concerns, "\n", [](auto&& kvp) { return format("Data store '{}': {}", kvp.first, kvp.second); }));
+		if (!msg::confirm(msg))
+			return failure("canceled");
+	}
+
+	return success();
+}
+
+void Database::UpdateDataStore(function<void(DataStore&)> update_func)
+{
+	for (auto& [name, store] : mDataStores)
+	{
+		update_func(store);
+	}
 }
 
 json Database::SaveSchema() const
@@ -539,10 +602,10 @@ void Database::LoadSchema(json const& from)
 
 	for (auto&& [name, typedesc] : schema.at("typedesc").get_ref<json::object_t const&>())
 	{
-		auto type_def = ResolveType(name);
+		auto type_def = mSchema.ResolveType(name);
 		if (!type_def)
 			throw std::runtime_error(format("invalid type defined: {}", name));
-		type_def->FromJSON(*this, typedesc);
+		type_def->FromJSON(mSchema, typedesc);
 	}
 }
 

@@ -10,7 +10,7 @@ enum class DefinitionType
 
 struct TypeDefinition;
 struct Database;
-
+struct Schema;
 
 struct TypeReference
 {
@@ -29,7 +29,7 @@ struct TypeReference
 
 	string ToString() const;
 	json ToJSON() const;
-	void FromJSON(Database const& db, json const& value);
+	void FromJSON(Schema const& schema, json const& value);
 };
 
 using TemplateArgument = variant<uint64_t, TypeReference>;
@@ -88,7 +88,7 @@ struct TypeDefinition
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
 
 	virtual json ToJSON() const;
-	virtual void FromJSON(Database const& db, json const& value);
+	virtual void FromJSON(Schema const& schema, json const& value);
 
 protected:
 
@@ -123,7 +123,7 @@ struct FieldDefinition
 	json InitialValue;
 
 	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"initial", InitialValue} }); }
-	void FromJSON(Database const& db, json const& value);
+	void FromJSON(Schema const& schema, json const& value);
 };
 
 struct RecordDefinition : TypeDefinition
@@ -139,7 +139,7 @@ struct RecordDefinition : TypeDefinition
 	string FreshFieldName() const;
 
 	virtual json ToJSON() const override;
-	virtual void FromJSON(Database const& db, json const& value) override;
+	virtual void FromJSON(Schema const& schema, json const& value) override;
 
 protected:
 
@@ -180,9 +180,9 @@ struct EnumDefinition : TypeDefinition
 	{
 		return TypeDefinition::ToJSON();
 	}
-	virtual void FromJSON(Database const& db, json const& value) override
+	virtual void FromJSON(Schema const& schema, json const& value) override
 	{
-		TypeDefinition::FromJSON(db, value);
+		TypeDefinition::FromJSON(schema, value);
 	}
 
 protected:
@@ -220,4 +220,11 @@ struct Schema
 {
 	//map<string, unique_ptr<TypeDefinition>, less<>> Definitions;
 	vector<unique_ptr<TypeDefinition>> Definitions;
+
+	TypeDefinition const* ResolveType(string_view name) const;
+	TypeDefinition* ResolveType(string_view name);
+
+	/// TODO: These
+	size_t Version() const { return 1; }
+	size_t Hash() const { return 0; }
 };

@@ -2,6 +2,7 @@
 #include <fstream>
 #include "Schema.h"
 #include "Formats.h"
+#include "DataStore.h"
 
 struct Database
 {
@@ -11,7 +12,7 @@ struct Database
 
 	auto const& Definitions() const noexcept { return mSchema.Definitions; }
 
-	TypeDefinition const* ResolveType(string_view name) const;
+	//TypeDefinition const* ResolveType(string_view name) const;
 
 	template <typename T>
 	inline constexpr static T* mut(T const* v) noexcept { return const_cast<T*>(v); }
@@ -19,13 +20,14 @@ struct Database
 	string FreshTypeName(string_view base) const;
 
 	/// Actions
-	result<StructDefinition const*, string> AddNewStruct();
-	result<void, string> AddNewField(Rec def);
 
 	result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> ValidateTypeName(Def def, string const& new_name);
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
 	result<void, string> ValidateFieldType(Fld def, TypeReference const& type);
+
+	result<StructDefinition const*, string> AddNewStruct();
+	result<void, string> AddNewField(Rec def);
 
 	result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> SetTypeName(Def def, string const& new_name);
@@ -68,13 +70,6 @@ private:
 	json SaveSchema() const;
 	void LoadSchema(json const& from);
 
-	struct DataStore
-	{
-
-	};
-
-	map<string, DataStore, less<>> mDataStores;
-
 	template <typename T, typename... ARGS>
 	T const* AddType(ARGS&&... args)
 	{
@@ -84,12 +79,13 @@ private:
 		return result;
 	}
 
-	TypeDefinition* ResolveType(string_view name);
-
 	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params = {}, bool markable = false);
 
 	BuiltinDefinition const* mVoid = nullptr;
 
 	::Schema mSchema;
-	DataStore mStore;
+	map<string, DataStore, less<>> mDataStores;
+
+	result<void, string> CheckDataStore(function<result<void,string>(DataStore const&)> validaate_func);
+	void UpdateDataStore(function<void(DataStore&)> update_func);
 };

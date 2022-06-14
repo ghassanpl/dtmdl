@@ -45,7 +45,7 @@ json TypeReference::ToJSON() const
 	return result;
 }
 
-void TypeReference::FromJSON(Database const& db, json const& value)
+void TypeReference::FromJSON(Schema const& schema, json const& value)
 {
 	TemplateArguments.clear();
 	if (value.is_null())
@@ -55,7 +55,7 @@ void TypeReference::FromJSON(Database const& db, json const& value)
 	else
 	{
 		auto& type = value.get_ref<json::object_t const&>();
-		Type = db.ResolveType(type.at("name"));
+		Type = schema.ResolveType(type.at("name"));
 		if (!Type)
 			throw std::runtime_error(format("type '{}' not found", (string)type.at("name")));
 
@@ -69,7 +69,7 @@ void TypeReference::FromJSON(Database const& db, json const& value)
 				else
 				{
 					TypeReference ref;
-					ref.FromJSON(db, arg);
+					ref.FromJSON(schema, arg);
 					TemplateArguments.push_back(move(ref));
 				}
 			}
@@ -116,15 +116,15 @@ json RecordDefinition::ToJSON() const
 	return result;
 }
 
-void RecordDefinition::FromJSON(Database const& db, json const& value)
+void RecordDefinition::FromJSON(Schema const& schema, json const& value)
 {
-	TypeDefinition::FromJSON(db, value);
+	TypeDefinition::FromJSON(schema, value);
 	mFields.clear();
 	auto& fields = value.at("fields").get_ref<json::array_t const&>();
 	for (auto& field : fields)
 	{
 		auto new_field = make_unique<FieldDefinition>();
-		new_field->FromJSON(db, field);
+		new_field->FromJSON(schema, field);
 		new_field->ParentRecord = this;
 		mFields.push_back(move(new_field));
 	}
@@ -144,10 +144,10 @@ json TypeDefinition::ToJSON() const
 	return result;
 }
 
-void TypeDefinition::FromJSON(Database const& db, json const& value)
+void TypeDefinition::FromJSON(Schema const& schema, json const& value)
 {
 	mName = value.at("name").get_ref<json::string_t const&>();
-	mBaseType.FromJSON(db, value.at("base"));
+	mBaseType.FromJSON(schema, value.at("base"));
 	if (auto it = value.find("params"); it != value.end())
 	{
 		mTemplateParameters.clear();
@@ -165,9 +165,25 @@ void TemplateParameter::FromJSON(json const& value)
 	string_ops::split(s, ",", [this](string_view s, bool) { Flags.set(magic_enum::enum_cast<TemplateParameterFlags>(s).value()); });
 }
 
-void FieldDefinition::FromJSON(Database const& db, json const& value)
+void FieldDefinition::FromJSON(Schema const& schema, json const& value)
 {
 	Name = value.at("name").get_ref<json::string_t const&>();
-	FieldType.FromJSON(db, value.at("type"));
+	FieldType.FromJSON(schema, value.at("type"));
 	InitialValue = value.at("initial");
+}
+
+TypeDefinition const* Schema::ResolveType(string_view name) const
+{
+	for (auto& def : Definitions)
+		if (def->Name() == name)
+			return def.get();
+	return nullptr;
+}
+
+TypeDefinition* Schema::ResolveType(string_view name)
+{
+	for (auto& def : Definitions)
+		if (def->Name() == name)
+			return def.get();
+	return nullptr;
 }

@@ -104,7 +104,7 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 			InputText("###typename", &name);
 		},
 		&Database::SetTypeName,
-			[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
+		[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
 		);
 }
 

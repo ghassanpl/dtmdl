@@ -39,6 +39,12 @@
     <ClCompile Include="Formats.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DataStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\ghassanpl\windows_message_box\windows_message_box.cpp">
+      <Filter>Source Files\External</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />
@@ -61,6 +67,12 @@
     </ClInclude>
     <ClInclude Include="Formats.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStore.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_message_box.h">
+      <Filter>Source Files\External</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

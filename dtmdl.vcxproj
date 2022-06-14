@@ -19,7 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\ghassanpl\windows_message_box\windows_message_box.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Database.cpp" />
+    <ClCompile Include="DataStore.cpp" />
     <ClCompile Include="Formats.cpp" />
     <ClCompile Include="imgui_impl_sdl.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
@@ -40,7 +45,9 @@
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_message_box.h" />
     <ClInclude Include="Database.h" />
+    <ClInclude Include="DataStore.h" />
     <ClInclude Include="Formats.h" />
     <ClInclude Include="imgui_impl_sdl.h" />
     <ClInclude Include="imgui_impl_sdlrenderer.h" />
