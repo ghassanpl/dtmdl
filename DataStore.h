@@ -7,11 +7,13 @@ struct DataStore
 	json Storage;
 
 	DataStore(Database const& db);
+	DataStore(Database const& db, json storage);
 
 	/// The functions below assume the schema is correct
 
 	void AddNewStruct(string_view name);
 	void AddNewField(string_view record, string_view field);
+	void EnsureField(string_view record, string_view field);
 
 	void SetTypeName(string_view old_name, string_view new_name);
 	void SetFieldName(string_view record, string_view old_name, string_view new_name);

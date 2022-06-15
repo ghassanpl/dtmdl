@@ -30,6 +30,8 @@ struct TypeReference
 	string ToString() const;
 	json ToJSON() const;
 	void FromJSON(Schema const& schema, json const& value);
+
+	explicit operator bool() const noexcept { return Type != nullptr; }
 };
 
 using TemplateArgument = variant<uint64_t, TypeReference>;

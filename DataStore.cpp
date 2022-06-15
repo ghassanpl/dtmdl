@@ -18,6 +18,11 @@ DataStore::DataStore(Database const& db)
 	});
 }
 
+DataStore::DataStore(Database const& db, json storage)
+	: Storage(move(storage))
+{
+}
+
 void DataStore::AddNewStruct(string_view name)
 {
 	Storage.at("fielddata")[string{name}] = json::object();
@@ -26,6 +31,13 @@ void DataStore::AddNewStruct(string_view name)
 void DataStore::AddNewField(string_view record, string_view field)
 {
 	Storage.at("fielddata").find(record)->operator[](string{ field }) = json::array({ json{} });
+}
+
+void DataStore::EnsureField(string_view record, string_view field)
+{
+	auto record_data = Storage.at("fielddata").find(record);
+	if (auto field_data = record_data->find(field); field_data == record_data->end())
+		record_data->operator[](string{ field }) = json::array({ json{} });
 }
 
 void DataStore::SetTypeName(string_view old_name, string_view new_name)

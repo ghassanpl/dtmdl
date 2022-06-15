@@ -19,12 +19,43 @@ FilterFunc fltAnyRecord = [](TypeDefinition const* def) { return def && def->IsR
 FilterFunc fltAnyEnum = [](TypeDefinition const* def) { return def && def->IsEnum(); };
 FilterFunc fltAny = [](TypeDefinition const* def) { return def; };
 
-/*
-FilterFunc fltNoCycles(Database& db, TypeDefinition const* self, FilterFunc parent = fltAny)
+struct IModal
 {
-	return FilterFunc{ [parent = move(parent), self, &db](TypeDefinition const* def) { return parent(def) && !db.IsParentOrChild(def, self); } };
+	virtual ~IModal() noexcept = default;
+
+	virtual void Do() = 0;
+	virtual string WindowName() const = 0;
+
+	bool Close = false;
+};
+
+struct ErrorModal : IModal
+{
+	string Message;
+
+	ErrorModal(string msg)
+		: Message(move(msg))
+	{
+
+	}
+
+	virtual void Do() override
+	{
+		ImGui::Text("%s", Message.c_str());
+		ImGui::Spacing();
+		if (ImGui::Button("OK"))
+			Close = true;
+	}
+	virtual string WindowName() const override { return "Error"; }
+};
+
+vector<unique_ptr<IModal>> Modals;
+
+template <typename T, typename... ARGS>
+void OpenModal(ARGS&&... args)
+{
+	Modals.push_back(make_unique<T>(forward<ARGS>(args)...));
 }
-*/
 
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
@@ -231,11 +262,11 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 
 void CheckError(result<void, string> val)
 {
-
+	if (val.has_error())
+		OpenModal<ErrorModal>(val.error());
 }
 
 vector<function<void()>> LateExec;
-vector<pair<string, function<bool()>>> Modals;
 
 void ShowOptions(int& chosen, span<string> options)
 {
@@ -260,42 +291,80 @@ void ShowOptions(int& chosen, ARGS&&... args)
 	ShowOptions(chosen, span{ options });
 }
 
-void ShowUsageHandleUI(TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeUsedInFieldType const& usage)
+TypeReference* GetTypeRef(TypeReference& ref, span<size_t const> s)
+{
+	if (s.empty()) 
+		return &ref;
+	if (s[0] >= ref.TemplateArguments.size())
+		return nullptr;
+	return GetTypeRef(get<TypeReference>(ref.TemplateArguments[s[0]]), s.subspan(1));
+}
+
+TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& usage)
+{
+	TypeReference old_type = usage.Field->FieldType;
+	for (auto& ref : usage.References)
+	{
+		if (auto subref = GetTypeRef(old_type, ref))
+			subref->Type = db.VoidType();
+	}
+	return old_type;
+}
+
+/*
+TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& usage)
+{
+	for (auto& ref : usage.References)
+		ref->Type = db.VoidType();
+	auto before = old_type_reference.ToString();
+	auto after = usage.Field->FieldType.ToString();
+	return std::exchange(usage.Field->FieldType, old_type_reference);
+}
+*/
+
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeUsedInFieldType const& usage)
 {
 	using namespace ImGui;
 
 	/// TODO: Add option to serialize values from this field/subfield into the 'json' type
-
-	if (&usage.Record->Field(usage.FieldIndex)->FieldType != usage.Reference)
-	{
-		/// TODO: Check if changing template argument type to void is at all possible
-		/// e.g. ValidateFieldType(field, changed_type);
-		ShowOptions(settings.first,
-			"Remove Field",
-			"Change Field Type to 'void'",
-			"Change Template Argument to 'void'");
-	}
-	else
-	{
-		ShowOptions(settings.first,
-			"Remove Field",
-			"Change Field Type to 'void'");
-	}
+	/// TODO: Check if changing template argument type to void is at all possible
+	/// e.g. ValidateFieldType(field, changed_type);
+	ShowOptions(settings.first,
+		"Remove Field",
+		format("Change All Occurances of '{}' to 'void'", def_to_delete->Name()));
 	switch (settings.first)
 	{
 	case 0:
 		Text("NOTE: Removing this field will also remove all data stored in this field!");
 		break;
 	case 1:
-		Text("NOTE: Changing the field type to 'void' will also remove all data stored in this field!");
-		break;
-	case 2:
-		Text("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
+	{
+		auto changed = Change(db, usage);
+		auto str = format("Change: var {0} : {1}; -> var {0} : {2};", usage.Field->Name, usage.Field->FieldType.ToString(), changed.ToString());
+		Text("%s", str.c_str());
+		Spacing();
+	}
+		if (usage.References.size() == 1 && usage.References[0].empty())
+			Text("NOTE: Changing the field type to 'void' will also remove all data stored in this field!"); 
+		else
+			Text("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
 		break;
 	}
 }
 
-void ShowUsageHandleUI(TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeIsBaseTypeOf const& usage)
+result<void, string> ApplyChangeOption(Database& db, Database::TypeUsedInFieldType const& usage, pair<int, std::any>& settings)
+{
+	switch (settings.first)
+	{
+	case 0:
+		return db.SetFieldType(usage.Field, Change(db, usage));
+	case 1:
+		return db.DeleteField(usage.Field);
+	}
+	throw runtime_error("invalid change option");
+}
+
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeIsBaseTypeOf const& usage)
 {
 	using namespace ImGui;
 	vector<string> options = { 
@@ -312,86 +381,136 @@ void ShowUsageHandleUI(TypeDefinition const* def_to_delete, pair<int, std::any>&
 	Checkbox(move_txt.c_str(), &std::any_cast<bool&>(settings.second));
 }
 
-void ShowUsageHandleUI(TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeHasDataInDataStore const& usage)
+result<void, string> ApplyChangeOption(Database& db, Database::TypeIsBaseTypeOf const& usage, pair<int, std::any>& settings)
+{
+	switch (settings.first)
+	{
+	case 0:
+		if (any_cast<bool>(settings.second))
+			return db.CopyFieldsAndMoveUpBaseTypeHierarchy(usage.ChildType);
+		else
+			return db.SetRecordBaseType(usage.ChildType, {});
+	case 1:
+		if (any_cast<bool>(settings.second))
+			return db.CopyFieldsAndMoveUpBaseTypeHierarchy(usage.ChildType);
+		else
+			return db.SetRecordBaseType(usage.ChildType, TypeReference{ usage.ChildType });
+	}
+	throw runtime_error("invalid change option");
+}
+
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeHasDataInDataStore const& usage)
 {
 	settings.first = 0;
 	ImGui::Text("NOTE: All data of this type will be deleted");
 	/// TODO: Option to perform a data export of just this type
 }
 
-pair<string, function<bool()>> DeleteTypeModal(Database& db, RecordDefinition* def, vector<Database::TypeUsage> usages)
+result<void, string> ApplyChangeOption(Database& db, Database::TypeHasDataInDataStore const& usage, pair<int, std::any>& settings)
 {
-	using namespace ImGui;
-	vector<pair<int, std::any>> options;
-	options.resize(usages.size(), { -1, {} });
-	return { "Deleting Type", [&db, def, usages = move(usages), make_backup = true, options = move(options)]() mutable {
-		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", def->Name(), usages.size());
+	/// This will be taken care of by the db deleting the type
+
+	/// TODO: perform data export if chosen
+
+	return success();
+}
+
+struct DeleteTypeModal : IModal
+{
+	Database& mDB;
+	RecordDefinition* mRecord;
+	vector<Database::TypeUsage> mUsages;
+	vector<pair<int, std::any>> mSettings;
+	bool mMakeBackup = true;
+
+	DeleteTypeModal(Database& db, RecordDefinition* def, vector<Database::TypeUsage> usages)
+		: mDB(db)
+		, mRecord(def)
+		, mUsages(move(usages))
+		, mSettings(mUsages.size(), { -1, {} })
+	{
+
+	}
+
+	virtual void Do() override
+	{
+		using namespace ImGui;
+
+		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mRecord->Name(), mUsages.size());
 
 		Text("%s", text.c_str());
 
 		int i = 0;
-		for (auto& usage : usages)
+		for (auto& usage : mUsages)
 		{
-			visit([&](auto& usage) { 
+			visit([&](auto& usage) {
 				PushID(&usage);
-				auto usage_text = db.Stringify(usage);
+				auto usage_text = mDB.Stringify(usage);
 				BulletText("%s", usage_text.c_str());
 				Indent();
-				ShowUsageHandleUI(def, options[i], usage);
+				ShowUsageHandleUI(mDB, mRecord, mSettings[i], usage);
 				Unindent();
 				PopID();
-			}, usage);
+				}, usage);
 			++i;
 		}
 
 		Spacing();
-		Checkbox("Make Database Backup", &make_backup);
+		Checkbox("Make Database Backup", &mMakeBackup);
 
 		Spacing();
 
-		auto chosen_all_options = ranges::all_of(options, [](auto const& opt) { return opt.first != -1; });
-		
-		bool close = false;
+		auto chosen_all_options = ranges::all_of(mSettings, [](auto const& opt) { return opt.first != -1; });
+
 		BeginDisabled(!chosen_all_options);
 		if (Button("Proceed with Changes"))
 		{
-			if (make_backup)
+			if (mMakeBackup)
 			{
-				if (auto result = db.CreateBackup(); result.has_error())
+				if (auto result = mDB.CreateBackup(); result.has_error())
 				{
 					auto err = format("Backup could not be created: {}", result.error());
 					::ghassanpl::windows_message_box({ ::ghassanpl::msg::title{"Backup creation failed"}, ::ghassanpl::msg::description{err},
 						::ghassanpl::msg::ok_button });
-					close = true;
+					Close = true;
 				}
 			}
 
-			if (!close)
+			if (!Close)
 			{
-				set<string> removed_field;
-				for (size_t i = 0; i < options.size(); ++i)
+				vector<string> issues;
+				for (size_t i = 0; i < mSettings.size(); ++i)
 				{
-					auto& usage = usages[i];
-					auto& option = options[i];
+					auto& usage = mUsages[i];
+					auto& option = mSettings[i];
 
-					if (auto u = get_if<Database::TypeUsedInFieldType>(&usage))
-					{
-						if (removed_field.contains(u->))
-						if (option.first == 0)
-					}
+					visit([&](auto& usage) { auto result = ApplyChangeOption(mDB, usage, option); if (result.has_error()) issues.push_back(result.error()); }, usage);
 				}
-				///db.ApplyChanges(usages);
+				if (issues.empty())
+				{
+					auto result = mDB.DeleteType(mRecord);
+					if (result.has_error())
+						OpenModal<ErrorModal>(format("Type not deleted:\n\n{}", result.error()));
+				}
+				else
+				{
+					OpenModal<ErrorModal>(format("Type not deleted - Could not apply the chosen changes due to the following issues:\n\n{}", string_ops::join(issues, "\n")));
+				}
 			}
 
-			close = true;
+			Close = true;
 		}
 		EndDisabled();
 		SameLine();
 		if (Button("Cancel Changes"))
-			close = true;
-		return close;
-	}};
-}
+			Close = true;
+	}
+
+	virtual string WindowName() const override
+	{
+		return "Deleting Type";
+	}
+};
 
 void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 {
@@ -415,7 +534,7 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 			if (usages.empty())
 				LateExec.push_back([&db, def] { CheckError(db.DeleteType(def)); });
 			else
-				Modals.push_back(DeleteTypeModal(db, def, move(usages)));
+				OpenModal<DeleteTypeModal>(db, def, move(usages));
 			CloseCurrentPopup();
 		}
 		SameLine();
@@ -658,17 +777,16 @@ int main(int, char**)
 		LateExec.clear();
 
 		bool close_modal = false;
-		for (auto& [name, modal] : Modals)
+		for (auto& modal : Modals)
 		{
-			ImGui::OpenPopup(name.c_str());
-			if (ImGui::BeginPopupModal(name.c_str()))
+			ImGui::OpenPopup(modal->WindowName().c_str());
+			if (ImGui::BeginPopupModal(modal->WindowName().c_str()))
 			{
-				close_modal = modal();
+				modal->Do();
 				ImGui::End();
 			}
 		}
-		if (close_modal)
-			Modals.pop_back();
+		erase_if(Modals, [](auto const& modal) { return modal->Close; });
 
 		// Rendering
 		ImGui::Render();

@@ -371,6 +371,65 @@ result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t 
 	return success();
 }
 
+result<void, string> Database::MoveField(Rec from_record, string_view field_name, Rec to_record)
+{
+	/// Validation
+	if (!from_record || !to_record)
+		throw invalid_argument("both records must be non-null");
+
+	if (to_record->OwnField(field_name))
+		return failure(format("record '{}' already has field '{}'", to_record->Name(), field_name));
+	
+	auto src_field = from_record->OwnField(field_name);
+	if (!src_field)
+		return failure(format("record '{}' does not have field '{}'", from_record->Name(), field_name));
+
+	/// DataStore update
+	UpdateDataStore([from_record, to_record, field_name](DataStore& store) {
+		/// 1. Assure that the destination record has the proper field entries (DO NOT CHANGE THEM!)
+		store.EnsureField(to_record->Name(), field_name);
+		/// 2. Remove field entry from source record
+		store.DeleteField(from_record->Name(), field_name);
+	});
+
+	/// Schema Change
+
+	mut(to_record)->mFields.push_back(make_unique<FieldDefinition>(to_record, move(src_field->Name), src_field->FieldType, move(src_field->InitialValue)));
+	auto it = ranges::find_if(from_record->mFields, [src_field](auto const& f) { return f.get() == src_field; });
+	mut(from_record)->mFields.erase(it);
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "MoveField"}, {"from_record", from_record->Name()}, {"fieldname", field_name}, { "to_record", to_record->Name() }});
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::CopyFieldsAndMoveUpBaseTypeHierarchy(Rec def)
+{
+	if (!def->BaseType())
+		return SetRecordBaseType(def, {});
+
+	auto base_type = def->BaseType().Type->AsRecord();
+	if (!base_type)
+		return SetRecordBaseType(def, {});
+
+	auto result = ValidateRecordBaseType(def, TypeReference{ base_type });
+	if (result.has_error())
+		return result;
+
+	auto base_field_names = base_type->OwnFieldNames();
+	for (auto& base_field_name : base_field_names)
+	{
+		if (auto result = MoveField(base_type, base_field_name, def); result.has_error())
+			return result;
+	}
+
+	return SetRecordBaseType(def, base_type->BaseType());
+}
+
 result<void, string> Database::DeleteField(Fld def)
 {
 	/// Validation
@@ -400,39 +459,36 @@ result<void, string> Database::DeleteField(Fld def)
 	return success();
 }
 
-/*
-Database::TypeUsageList Database::LocateTypeReferences(Def type)
-{
-	Database::TypeUsageList list;
-	for (auto& def : mSchema.Definitions)
-	{
-		if (def->BaseType().Type == type)
-			list.BaseTypes.push_back(def.get());
-
-		if (auto record = def->AsRecord())
-		{
-			for (auto& field : record->Fields())
-				list.LocateTypeReference(type, field.get());
-		}
-	}
-	return list;
-}
-*/
-
 template <typename CALLBACK>
-void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference)
+void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference, vector<size_t> ref = {})
 {
 	if (start_reference.Type == type)
-		callback(&start_reference);
+		callback(move(ref));
+	size_t i = 0;
 	for (auto& templ : start_reference.TemplateArguments)
+	{
 		if (auto arg = get_if<TypeReference>(&templ))
-			LocateTypeReference(callback, type, *arg);
+		{
+			ref.push_back(i);
+			LocateTypeReference(callback, type, *arg, ref);
+			ref.pop_back();
+		}
+		++i;
+	}
 }
 
 void LocateTypeReference(vector<Database::TypeUsage>& usage_list, TypeDefinition const* to_type, FieldDefinition* in_field)
 {
-	LocateTypeReference([&usage_list, in_field] (TypeReference* ref) {
-		usage_list.push_back(Database::TypeUsedInFieldType{ in_field->ParentRecord, in_field->ParentRecord->FieldIndexOf(in_field), ref });
+	LocateTypeReference([&usage_list, in_field] (vector<size_t> ref) {
+		auto existing = ranges::find_if(usage_list, [in_field](auto const& usage) { 
+			if (auto tr = get_if<Database::TypeUsedInFieldType>(&usage); tr && tr->Field == in_field)
+				return true;
+			return false;
+		});
+		if (existing == usage_list.end())
+			usage_list.push_back(Database::TypeUsedInFieldType{ in_field, { move(ref) } });
+		else
+			get<Database::TypeUsedInFieldType>(*existing).References.push_back(move(ref));
 	}, to_type, in_field->FieldType);
 }
 
@@ -513,12 +569,12 @@ Database::Database(filesystem::path dir)
 	if (filesystem::exists(dir) && !filesystem::is_directory(dir))
 		throw std::invalid_argument("argument must be a directory");
 
-	mDirectory = canonical(move(dir));
-
 	error_code ec;
-	filesystem::create_directories(mDirectory, ec);
+	filesystem::create_directories(dir, ec);
 	if (ec)
 		throw std::invalid_argument("could not create target directory");
+
+	mDirectory = canonical(move(dir));
 
 	mChangeLog.open(mDirectory / "changelog.wilson", ios::app|ios::out);
 
@@ -561,12 +617,8 @@ Database::Database(filesystem::path dir)
 	AddFormatPlugin(make_unique<CppDeclarationFormat>());
 
 	mDataStores.emplace("main", DataStore(*this));
-
-	if (filesystem::exists(mDirectory / "schema.json"))
-	{
-		LoadSchema(ghassanpl::load_json_file(mDirectory / "schema.json"));
-	}
-
+	
+	LoadAll();
 	SaveAll();
 }
 
@@ -620,12 +672,30 @@ void Database::SaveAll()
 
 	for (auto& [name, store] : mDataStores)
 	{
-		std::ofstream out{ mDirectory / format("{}_datastore.wilson", name) };
+		std::ofstream out{ mDirectory / format("{}.datastore", name) };
 		out.exceptions(std::ios::badbit | std::ios::failbit);
 		to_wilson_stream(out, store.Storage);
 	}
 
 	mChangeLog.flush();
+}
+
+void Database::LoadAll()
+{
+	if (filesystem::exists(mDirectory / "schema.json"))
+	{
+		LoadSchema(ghassanpl::load_json_file(mDirectory / "schema.json"));
+	}
+
+	for (auto it = filesystem::directory_iterator{ mDirectory }; it != filesystem::directory_iterator{}; ++it)
+	{
+		auto& path = it->path();
+		if (path.extension() == ".datastore")
+		{
+			mDataStores.erase(path.stem().string());
+			mDataStores.insert({ path.stem().string(), DataStore{*this, try_load_wilson_file(path)} });
+		}
+	}
 }
 
 BuiltinDefinition const* Database::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable)
@@ -730,8 +800,8 @@ void Database::AddFormatPlugin(unique_ptr<FormatPlugin> plugin)
 
 string Database::Stringify(TypeUsedInFieldType const& usage)
 {
-	auto field = usage.Record->Field(usage.FieldIndex);
-	return format("Type is used in field '{}' of type '{}': {}", field->Name, usage.Record->Name(), field->ToString());
+	auto field = usage.Field;
+	return format("Type is used in field '{}' of type '{}': {}", field->Name, field->ParentRecord->Name(), field->ToString());
 }
 
 string Database::Stringify(TypeIsBaseTypeOf const& usage)

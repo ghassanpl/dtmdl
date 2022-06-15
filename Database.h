@@ -28,8 +28,9 @@ struct Database
 
 	struct TypeUsedInFieldType
 	{
-		FieldDefinition const* Field;
-		TypeReference* Reference;
+		FieldDefinition* Field;
+		//vector<TypeReference*> References;
+		vector<vector<size_t>> References;
 	};
 
 	struct TypeIsBaseTypeOf
@@ -69,6 +70,8 @@ struct Database
 		return SwapFields(field_a->ParentRecord, field_a->ParentRecord->FieldIndexOf(field_a), field_b->ParentRecord->FieldIndexOf(field_b));
 	}
 
+	result<void, string> MoveField(Rec from_record, string_view field_name, Rec to_record);
+
 	result<void, string> CopyFieldsAndMoveUpBaseTypeHierarchy(Rec def);
 
 	result<void, string> DeleteField(Fld def);
@@ -79,12 +82,15 @@ struct Database
 	Database(filesystem::path dir);
 
 	void SaveAll();
+	void LoadAll();
 	result<void, string> CreateBackup();
 	result<void, string> CreateBackup(filesystem::path in_directory);
 
 	auto const& Directory() const noexcept { return mDirectory; }
 	auto const& Schema() const noexcept { return mSchema; }
 	auto const& DataStores() const noexcept { return mDataStores; }
+
+	auto VoidType() const noexcept { return mVoid; }
 
 	string Namespace;
 
