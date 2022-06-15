@@ -85,7 +85,7 @@ struct TypeDefinition
 	bool IsBuiltIn() const noexcept { return Type() == DefinitionType::BuiltIn; }
 	bool IsEnum() const noexcept { return Type() == DefinitionType::Enum; }
 
-	RecordDefinition const* AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
+	RecordDefinition const* AsRecord() const noexcept;
 
 	auto const& Name() const noexcept { return mName; }
 	auto const& BaseType() const noexcept { return mBaseType; }
@@ -126,6 +126,8 @@ struct FieldDefinition
 
 	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"initial", InitialValue} }); }
 	void FromJSON(Schema const& schema, json const& value);
+
+	string ToString() const { return format("var {} : {} = {};", Name, FieldType.ToString(), InitialValue.dump()); }
 };
 
 struct RecordDefinition : TypeDefinition
@@ -133,8 +135,12 @@ struct RecordDefinition : TypeDefinition
 	/// TODO: Properties and Methods, maybe
 
 	FieldDefinition const* Field(size_t i) const;
-	FieldDefinition const* Field(string_view name) const;
+	FieldDefinition const* OwnField(string_view name) const;
+	FieldDefinition const* OwnOrBaseField(string_view name) const;
 	size_t FieldIndexOf(FieldDefinition const* field) const;
+
+	set<string> OwnFieldNames() const;
+	set<string> AllFieldNames() const;
 
 	auto const& Fields() const noexcept { return mFields; }
 

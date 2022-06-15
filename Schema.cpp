@@ -3,6 +3,8 @@
 #include "Schema.h"
 #include "Database.h"
 
+RecordDefinition const* TypeDefinition::AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
+
 string to_string(TypeReference const& tr)
 {
 	return tr.ToString();
@@ -79,14 +81,30 @@ void TypeReference::FromJSON(Schema const& schema, json const& value)
 
 TypeReference::TypeReference(TypeDefinition const* value) noexcept : Type(value), TemplateArguments(value ? value->TemplateParameters().size() : 0) { }
 
+FieldDefinition const* RecordDefinition::Field(size_t index) const
+{
+	if (index >= mFields.size())
+		return nullptr;
+	return mFields[index].get();
+}
 
-FieldDefinition const* RecordDefinition::Field(string_view name) const
+FieldDefinition const* RecordDefinition::OwnField(string_view name) const
 {
 	for (auto& field : mFields)
 	{
 		if (field->Name == name)
 			return field.get();
 	}
+	return nullptr;
+}
+
+FieldDefinition const* RecordDefinition::OwnOrBaseField(string_view name) const
+{
+	auto field = OwnField(name);
+	if (field)
+		return field;
+	if (mBaseType.Type)
+		return mBaseType.Type->AsRecord()->OwnOrBaseField(name);
 	return nullptr;
 }
 
@@ -98,11 +116,32 @@ size_t RecordDefinition::FieldIndexOf(FieldDefinition const* field) const
 	return -1;
 }
 
+set<string> RecordDefinition::OwnFieldNames() const
+{
+	set<string> result;
+	for (auto& f : mFields)
+		result.insert(f->Name);
+	return result;
+}
+
+set<string> RecordDefinition::AllFieldNames() const
+{
+	set<string> result;
+	TypeDefinition const* rec = this;
+	while (rec)
+	{
+		for (auto& f : rec->AsRecord()->mFields)
+			result.insert(f->Name);
+		rec = rec->BaseType().Type;
+	}
+	return result;
+}
+
 string RecordDefinition::FreshFieldName() const
 {
 	string candidate = "Field";
 	size_t num = 1;
-	while (Field(candidate))
+	while (OwnOrBaseField(candidate))
 		candidate = format("Field{}", num++);
 	return candidate;
 }

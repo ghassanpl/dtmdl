@@ -5,6 +5,8 @@
 #include <ghassanpl/wilson.h>
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
 
+#include <kubazip/zip/zip.h>
+
 string Database::FreshTypeName(string_view base) const
 {
 	string candidate = string{ base };
@@ -75,7 +77,23 @@ result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference con
 {
 	if (IsParent(def, type.Type))
 		return failure("cycle in base types");
-	/// TODO: Check for shadowing fields
+
+	if (type.Type)
+	{
+		auto record_field_names = def->OwnFieldNames();
+		auto base_field_names = type.Type->AsRecord()->AllFieldNames();
+
+		vector<string> shadowed_names;
+		ranges::set_intersection(record_field_names, base_field_names, back_inserter(shadowed_names));
+		if (!shadowed_names.empty())
+		{
+			vector<string> shadows;
+			for (auto& name : shadowed_names)
+				shadows.push_back(format("- {0}.{1} would hide {2}.{1}", def->Name(), name, type.Type->AsRecord()->OwnOrBaseField(name)->ParentRecord->Name()));
+			return failure(format("the following fields would hide base fields:\n{}", string_ops::join(shadows, "\n")));
+		}
+	}
+	
 	return success();
 }
 
@@ -382,6 +400,7 @@ result<void, string> Database::DeleteField(Fld def)
 	return success();
 }
 
+/*
 Database::TypeUsageList Database::LocateTypeReferences(Def type)
 {
 	Database::TypeUsageList list;
@@ -398,19 +417,63 @@ Database::TypeUsageList Database::LocateTypeReferences(Def type)
 	}
 	return list;
 }
+*/
+
+template <typename CALLBACK>
+void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference)
+{
+	if (start_reference.Type == type)
+		callback(&start_reference);
+	for (auto& templ : start_reference.TemplateArguments)
+		if (auto arg = get_if<TypeReference>(&templ))
+			LocateTypeReference(callback, type, *arg);
+}
+
+void LocateTypeReference(vector<Database::TypeUsage>& usage_list, TypeDefinition const* to_type, FieldDefinition* in_field)
+{
+	LocateTypeReference([&usage_list, in_field] (TypeReference* ref) {
+		usage_list.push_back(Database::TypeUsedInFieldType{ in_field->ParentRecord, in_field->ParentRecord->FieldIndexOf(in_field), ref });
+	}, to_type, in_field->FieldType);
+}
+
+vector<Database::TypeUsage> Database::ValidateDeleteType(Def type)
+{
+	vector<Database::TypeUsage> usage_list;
+
+	for (auto& def : mSchema.Definitions)
+	{
+		if (auto record = def->AsRecord())
+		{
+			if (record->BaseType().Type == type)
+				usage_list.push_back(Database::TypeIsBaseTypeOf{ record });
+
+			for (auto& field : record->Fields())
+				LocateTypeReference(usage_list, type, field.get());
+		}
+	}
+
+	for (auto& [name, store] : mDataStores)
+	{
+		if (store.HasTypeData(type->Name()))
+			usage_list.push_back(Database::TypeHasDataInDataStore{name});
+	}
+
+	return usage_list;
+}
 
 result<void, string> Database::DeleteType(Def type)
 {
 	/// Validation
-	auto usage_list = LocateTypeReferences(type);
+	{
+		auto usages = ValidateDeleteType(type);
 
-	auto validator = [type](DataStore const& store) -> result<void, string> {
-		if (store.HasTypeData(type->Name()))
-			return format("type {} has data", type->Name());
-		return success();
-	};
-	if (auto res = CheckDataStore(validator); res.has_error())
-		return move(res).as_failure();
+		/// We can delete a type if it has data in storage
+		std::erase_if(usages, [](TypeUsage const& usage) { return holds_alternative<TypeHasDataInDataStore>(usage); });
+
+		/// If there are some other reasons, we can't delete the type
+		if (!usages.empty())
+			return failure(format("cannot delete type due to following reasons:\n{}", string_ops::join(usages, "\n", [this](TypeUsage const& usage) { return Stringify(usage); })));
+	}
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "DeleteType"}, {"type", type->Name()}, {"backup", type->ToJSON() } });
@@ -450,7 +513,7 @@ Database::Database(filesystem::path dir)
 	if (filesystem::exists(dir) && !filesystem::is_directory(dir))
 		throw std::invalid_argument("argument must be a directory");
 
-	mDirectory = move(dir);
+	mDirectory = canonical(move(dir));
 
 	error_code ec;
 	filesystem::create_directories(mDirectory, ec);
@@ -512,19 +575,33 @@ void Database::AddChangeLog(json log)
 	mChangeLog << ghassanpl::to_wilson_string(log) << "\n";
 }
 
-void Database::CreateBackup()
+result<void, string> Database::CreateBackup()
 {
-	CreateBackup(filesystem::absolute(mDirectory).parent_path());
+	return CreateBackup(mDirectory.parent_path());
 }
 
-void Database::CreateBackup(filesystem::path in_directory)
+result<void, string> Database::CreateBackup(filesystem::path in_directory)
 {
 	mChangeLog.flush();
+	mChangeLog.close();
 	
+	vector<string> filenames;
 	for (auto it = filesystem::directory_iterator{ absolute(mDirectory) }; it != filesystem::directory_iterator{}; ++it)
 	{
+		filenames.push_back(it->path().string());
 		/// TODO: Add file to zip
 	}
+
+	auto zip_path = (in_directory / format("backup_{}_{:%F-%Hh%Mm%Ss%z}.zip", mDirectory.filename().string(), chrono::zoned_time{chrono::current_zone(), chrono::system_clock::now()})).string();
+	vector<const char*> filename_cstrs;
+	ranges::transform(filenames, back_inserter(filename_cstrs), [](string const& s) { return s.c_str(); });
+	auto error = zip_create(zip_path.c_str(), filename_cstrs.data(), filename_cstrs.size());
+
+	mChangeLog.open(mDirectory / "changelog.wilson", ios::app | ios::out);
+
+	if (error == 0)
+		return success();
+	return failure("zipping backup file failed");
 }
 
 void Database::SaveAll()
@@ -649,4 +726,20 @@ void Database::AddFormatPlugin(unique_ptr<FormatPlugin> plugin)
 	if (!plugin) return;
 	auto name = plugin->FormatName();
 	mFormatPlugins[name] = move(plugin);
+}
+
+string Database::Stringify(TypeUsedInFieldType const& usage)
+{
+	auto field = usage.Record->Field(usage.FieldIndex);
+	return format("Type is used in field '{}' of type '{}': {}", field->Name, usage.Record->Name(), field->ToString());
+}
+
+string Database::Stringify(TypeIsBaseTypeOf const& usage)
+{
+	return format("Type is the base type of type '{}'", usage.ChildType->Name());
+}
+
+string Database::Stringify(TypeHasDataInDataStore const& usage)
+{
+	return format("Type has data stored in store named '{}'", usage.StoreName);
 }

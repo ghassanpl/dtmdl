@@ -19,12 +19,39 @@ struct Database
 
 	string FreshTypeName(string_view base) const;
 
-	/// Actions
+	/// Validations
 
 	result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> ValidateTypeName(Def def, string const& new_name);
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
 	result<void, string> ValidateFieldType(Fld def, TypeReference const& type);
+
+	struct TypeUsedInFieldType
+	{
+		FieldDefinition const* Field;
+		TypeReference* Reference;
+	};
+
+	struct TypeIsBaseTypeOf
+	{
+		RecordDefinition const* ChildType;
+	};
+
+	struct TypeHasDataInDataStore
+	{
+		string StoreName;
+	};
+
+	using TypeUsage = std::variant<TypeUsedInFieldType, TypeIsBaseTypeOf, TypeHasDataInDataStore>;
+
+	string Stringify(TypeUsedInFieldType const& usage);
+	string Stringify(TypeIsBaseTypeOf const& usage);
+	string Stringify(TypeHasDataInDataStore const& usage);
+	string Stringify(TypeUsage const& usage) { return visit([this](auto const& usage) { return Stringify(usage); }, usage); }
+
+	vector<TypeUsage> ValidateDeleteType(Def type);
+
+	/// Actions
 
 	result<StructDefinition const*, string> AddNewStruct();
 	result<void, string> AddNewField(Rec def);
@@ -42,6 +69,8 @@ struct Database
 		return SwapFields(field_a->ParentRecord, field_a->ParentRecord->FieldIndexOf(field_a), field_b->ParentRecord->FieldIndexOf(field_b));
 	}
 
+	result<void, string> CopyFieldsAndMoveUpBaseTypeHierarchy(Rec def);
+
 	result<void, string> DeleteField(Fld def);
 	result<void, string> DeleteType(Def type);
 
@@ -50,8 +79,8 @@ struct Database
 	Database(filesystem::path dir);
 
 	void SaveAll();
-	void CreateBackup();
-	void CreateBackup(filesystem::path in_directory);
+	result<void, string> CreateBackup();
+	result<void, string> CreateBackup(filesystem::path in_directory);
 
 	auto const& Directory() const noexcept { return mDirectory; }
 	auto const& Schema() const noexcept { return mSchema; }
@@ -88,11 +117,21 @@ private:
 	::Schema mSchema;
 	map<string, DataStore, less<>> mDataStores;
 
+	/*
+	enum class TypeUsageType
+	{
+		BaseType,
+		FieldType,
+	};
+
 	struct TypeUsage
 	{
-		RecordDefinition const* Record;
-		size_t FieldIndex;
-		TypeReference* Reference;
+		TypeUsageType UsageType = {};
+		RecordDefinition const* Record = nullptr;
+		size_t FieldIndex = 0;
+		TypeReference* Reference = nullptr;
+
+		int Action = 0;
 	};
 
 	struct TypeUsageList
@@ -107,7 +146,7 @@ private:
 				callback(&start_reference);
 			for (auto& templ : start_reference.TemplateArguments)
 				if (auto arg = get_if<TypeReference>(&templ))
-					LocateTypeReference(references, type, *arg);
+					LocateTypeReference(callback, type, *arg);
 		}
 
 		void LocateTypeReference(TypeDefinition const* type, FieldDefinition* def)
@@ -119,6 +158,7 @@ private:
 	};
 
 	TypeUsageList LocateTypeReferences(Def type);
+	*/
 
 	result<void, string> CheckDataStore(function<result<void,string>(DataStore const&)> validaate_func);
 	void UpdateDataStore(function<void(DataStore&)> update_func);
