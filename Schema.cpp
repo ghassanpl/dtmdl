@@ -137,6 +137,17 @@ set<string> RecordDefinition::AllFieldNames() const
 	return result;
 }
 
+vector<FieldDefinition const*> RecordDefinition::AllFieldsOrdered() const
+{
+	vector<FieldDefinition const*> result;
+
+	if (auto type = BaseType(); type && type->IsRecord())
+		result = type->AsRecord()->AllFieldsOrdered();
+	ranges::transform(mFields, back_inserter(result), [](auto const& f) { return f.get(); });
+
+	return result;
+}
+
 string RecordDefinition::FreshFieldName() const
 {
 	string candidate = "Field";

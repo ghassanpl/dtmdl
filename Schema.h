@@ -146,6 +146,8 @@ struct RecordDefinition : TypeDefinition
 
 	auto const& Fields() const noexcept { return mFields; }
 
+	vector<FieldDefinition const*> AllFieldsOrdered() const;
+
 	string FreshFieldName() const;
 
 	virtual json ToJSON() const override;

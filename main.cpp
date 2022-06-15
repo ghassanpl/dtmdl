@@ -605,56 +605,74 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 
 		TableNextRow();
 		size_t index = 0;
-		for (auto& field : def->Fields())
+		for (auto& field : def->AllFieldsOrdered())
 		{
-			PushID(&field);
-			TableNextColumn();
-			SetNextItemWidth(GetContentRegionAvail().x);
-			FieldNameEditor(db, field.get());
-			TableNextColumn();
-			SetNextItemWidth(GetContentRegionAvail().x);
-			FieldTypeEditor(db, field.get());
-			TableNextColumn();
-			Text("Initial Value");
-			TableNextColumn();
-			Text("Properties");
-			TableNextColumn();
+			PushID(index);
 
-			BeginDisabled(index == 0);
-			if (SmallButton("Up"))
-				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
-			EndDisabled();
-			SameLine();
-			
-			BeginDisabled(index == def->Fields().size() - 1);
-			if (SmallButton("Down"))
-				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
-			EndDisabled();
-			SameLine();
-			
-			SmallButton("Duplicate"); SameLine();
-			SmallButton("Copy"); SameLine();
-			SmallButton("Delete");
-			if (BeginPopupContextItem("Are you sure you want to delete this field?", 0))
+			if (field->ParentRecord != def)
 			{
-				Text("Are you sure you want to delete this field?");
-				if (Button("Yes"))
-				{
-					auto usages = db.StoresWithFieldData(field.get());
-					if (usages.empty())
-						LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
-					else
-						OpenModal<DeleteFieldModal>(db, field.get(), move(usages));
-					
-					CloseCurrentPopup();
-				}
-				SameLine();
-				if (Button("No"))
-					CloseCurrentPopup();
-				EndPopup();
+				TableNextColumn();
+				auto name = format("{}.{}", field->ParentRecord->Name(), field->Name);
+				TextDisabled("%s", name.c_str());
+				TableNextColumn();
+				auto type = format("{}", field->FieldType.ToString());
+				TextDisabled("%s", type.c_str());
+				TableNextColumn();
+				Text("Initial Value");
+				TableNextColumn();
+				Text("Properties");
+				TableNextColumn();
+				SmallButton("Move to Child");
 			}
-			SameLine();
+			else
+			{
+				TableNextColumn();
+				SetNextItemWidth(GetContentRegionAvail().x);
+				FieldNameEditor(db, field);
+				TableNextColumn();
+				SetNextItemWidth(GetContentRegionAvail().x);
+				FieldTypeEditor(db, field);
+				TableNextColumn();
+				Text("Initial Value");
+				TableNextColumn();
+				Text("Properties");
+				TableNextColumn();
 
+				BeginDisabled(index == 0);
+				if (SmallButton("Up"))
+					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
+				EndDisabled();
+				SameLine();
+
+				BeginDisabled(index == def->Fields().size() - 1);
+				if (SmallButton("Down"))
+					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
+				EndDisabled();
+				SameLine();
+
+				SmallButton("Duplicate"); SameLine();
+				SmallButton("Copy"); SameLine();
+				SmallButton("Delete");
+				if (BeginPopupContextItem("Are you sure you want to delete this field?", 0))
+				{
+					Text("Are you sure you want to delete this field?");
+					if (Button("Yes"))
+					{
+						auto usages = db.StoresWithFieldData(field);
+						if (usages.empty())
+							LateExec.push_back([&db, field] { CheckError(db.DeleteField(field)); });
+						else
+							OpenModal<DeleteFieldModal>(db, field, move(usages));
+
+						CloseCurrentPopup();
+					}
+					SameLine();
+					if (Button("No"))
+						CloseCurrentPopup();
+					EndPopup();
+				}
+			}
+			
 			PopID();
 			index++;
 		}
@@ -674,12 +692,18 @@ Database* mCurrentDatabase = &mDatabase;
 void TypesTab()
 {
 	using namespace ImGui;
+	Spacing();
 	if (Button("Add Struct"))
 		ignore = mCurrentDatabase->AddNewStruct();
 	SameLine();
 	Button("Add Class"); SameLine();
 	Button("Add Enum"); SameLine();
-	Text("|");
+	Button("Add Union"); SameLine();
+	Button("Add Alias");
+	
+	Spacing();
+	Separator();
+	Spacing();
 
 	for (auto& def : mCurrentDatabase->Definitions())
 	{
@@ -688,21 +712,27 @@ void TypesTab()
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{
+				Indent();
 				EditRecord(*mCurrentDatabase, strukt, true);
+				Unindent();
 			}
 		}
 		else if (auto klass = dynamic_cast<ClassDefinition*>(def.get()))
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{
+				Indent();
 				EditRecord(*mCurrentDatabase, strukt, false);
+				Unindent();
 			}
 		}
 		else if (auto eenoom = dynamic_cast<EnumDefinition*>(def.get()))
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{
+				Indent();
 				EditEnum(*mCurrentDatabase, eenoom);
+				Unindent();
 			}
 		}
 		PopID();
