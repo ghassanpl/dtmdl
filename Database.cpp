@@ -394,7 +394,7 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 
 	/// Schema Change
 
-	mut(to_record)->mFields.push_back(make_unique<FieldDefinition>(to_record, move(src_field->Name), src_field->FieldType, move(src_field->InitialValue)));
+	mut(to_record)->mFields.push_back(make_unique<FieldDefinition>(to_record, move(mut(src_field)->Name), src_field->FieldType, move(mut(src_field)->InitialValue)));
 	auto it = ranges::find_if(from_record->mFields, [src_field](auto const& f) { return f.get() == src_field; });
 	mut(from_record)->mFields.erase(it);
 
@@ -433,13 +433,7 @@ result<void, string> Database::CopyFieldsAndMoveUpBaseTypeHierarchy(Rec def)
 result<void, string> Database::DeleteField(Fld def)
 {
 	/// Validation
-	auto validator = [def](DataStore const& store) -> result<void, string> { 
-		if (store.HasFieldData(def->ParentRecord->Name(), def->Name)) 
-			return format("field {}.{} has data", def->ParentRecord->Name(), def->Name); 
-		return success(); 
-	};
-	if (auto res = CheckDataStore(validator); res.has_error())
-		return move(res).as_failure();
+	/// So far deleting a field should always be allowed
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "DeleteField"},  {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"backup", def->ToJSON() } });
@@ -463,7 +457,8 @@ template <typename CALLBACK>
 void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference, vector<size_t> ref = {})
 {
 	if (start_reference.Type == type)
-		callback(move(ref));
+		callback(ref);
+	
 	size_t i = 0;
 	for (auto& templ : start_reference.TemplateArguments)
 	{
@@ -515,6 +510,17 @@ vector<Database::TypeUsage> Database::ValidateDeleteType(Def type)
 	}
 
 	return usage_list;
+}
+
+vector<string> Database::StoresWithFieldData(Fld field) const
+{
+	vector<string> result;
+	ranges::copy(
+		mDataStores
+			| views::filter([field](auto& kvp) { return kvp.second.HasFieldData(field->ParentRecord->Name(), field->Name); })
+			| views::transform([](auto& kvp) { return kvp.first; }),
+		back_inserter(result));
+	return result;
 }
 
 result<void, string> Database::DeleteType(Def type)

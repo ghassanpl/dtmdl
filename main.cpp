@@ -415,6 +415,56 @@ result<void, string> ApplyChangeOption(Database& db, Database::TypeHasDataInData
 	return success();
 }
 
+
+struct DeleteFieldModal : IModal
+{
+	Database& mDB;
+	FieldDefinition const* mField;
+	vector<string> mStores;
+	vector<char> mSettings;
+	bool mMakeBackup = true;
+
+	DeleteFieldModal(Database& db, FieldDefinition const* def, vector<string> stores_with_data)
+		: mDB(db)
+		, mField(def)
+		, mStores(move(stores_with_data))
+		, mSettings(mStores.size(), false)
+	{
+
+	}
+
+	virtual void Do() override
+	{
+		using namespace ImGui;
+
+		auto text = format("You are trying to delete the field '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mField->ParentRecord->Name(), mField->Name, mStores.size());
+
+		Text("%s", text.c_str());
+
+		size_t i = 0;
+		for (auto& store : mStores)
+		{
+			BulletText("Storage '': ");
+			SameLine();
+			Checkbox("Make data backup", (bool*)&mSettings[i]);
+			i++;
+		}
+
+		if (Button("Proceed with Changes"))
+		{
+			Close = true;
+		}
+		SameLine();
+		if (Button("Cancel Changes"))
+			Close = true;
+	}
+
+	virtual string WindowName() const override
+	{
+		return "Deleting Field";
+	}
+};
+
 struct DeleteTypeModal : IModal
 {
 	Database& mDB;
@@ -590,7 +640,12 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 				Text("Are you sure you want to delete this field?");
 				if (Button("Yes"))
 				{
-					LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
+					auto usages = db.StoresWithFieldData(field.get());
+					if (usages.empty())
+						LateExec.push_back([&db, field = field.get()] { CheckError(db.DeleteField(field)); });
+					else
+						OpenModal<DeleteFieldModal>(db, field.get(), move(usages));
+					
 					CloseCurrentPopup();
 				}
 				SameLine();

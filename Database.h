@@ -52,6 +52,8 @@ struct Database
 
 	vector<TypeUsage> ValidateDeleteType(Def type);
 
+	vector<string> StoresWithFieldData(Fld field) const;
+
 	/// Actions
 
 	result<StructDefinition const*, string> AddNewStruct();
