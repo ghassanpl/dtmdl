@@ -7,6 +7,7 @@
 
 #include <kubazip/zip/zip.h>
 
+/*
 string Database::FreshTypeName(string_view base) const
 {
 	string candidate = string{ base };
@@ -15,6 +16,7 @@ string Database::FreshTypeName(string_view base) const
 		candidate = format("{}{}", base, num++);
 	return candidate;
 }
+*/
 
 static string_view cpp_keywords[] = {
 	"alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case", "catch", "char", "char8_t",
@@ -216,7 +218,7 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 	/// Validation
 	
 	/// Schema Change
-	auto result = AddType<StructDefinition>(FreshTypeName("Struct"));
+	auto result = AddType<StructDefinition>(FreshName("Struct", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
 	if (!result)
 		return result;
 
@@ -239,7 +241,7 @@ result<void, string> Database::AddNewField(Rec def)
 	/// Validation
 
 	/// Schema Change
-	auto name = def->FreshFieldName();
+	auto name = FreshName("Field", [def](string_view name) { return !!def->OwnOrBaseField(name); });
 	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name, TypeReference{ mVoid }));
 
 	/// DataStore update
@@ -707,28 +709,6 @@ void Database::LoadAll()
 BuiltinDefinition const* Database::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable)
 {
 	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable);
-}
-
-result<void, string> Database::CheckDataStore(function<result<void, string>(DataStore const&)> validate_safety_func)
-{
-	map<string, string> safety_concerns;
-	for (auto& [name, store] : mDataStores)
-	{
-		if (auto result = validate_safety_func(store); result.has_error())
-		{
-			safety_concerns[name] = result.error();
-		}
-	}
-
-	if (!safety_concerns.empty())
-	{
-		string msg = format("There is data in the data stores which will be lost or corrupted if you perform this change:\n\n{}\n\nAre you sure you want to perform this change?",
-			string_ops::join(safety_concerns, "\n", [](auto&& kvp) { return format("Data store '{}': {}", kvp.first, kvp.second); }));
-		if (!msg::confirm(msg))
-			return failure("canceled");
-	}
-
-	return success();
 }
 
 void Database::UpdateDataStore(function<void(DataStore&)> update_func)

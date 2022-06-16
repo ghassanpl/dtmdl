@@ -24,3 +24,13 @@ using namespace outcome_v2_35644f5c;
 using namespace std;
 using namespace ghassanpl;
 using nlohmann::json;
+
+template <typename FUNC>
+string FreshName(string_view base, FUNC&& func)
+{
+	string candidate = string{ base };
+	size_t num = 1;
+	while (func(candidate))
+		candidate = format("{}{}", base, num++);
+	return candidate;
+}

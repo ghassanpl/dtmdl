@@ -8,6 +8,7 @@
 #include <any>
 
 #include "Database.h"
+#include "Values.h"
 
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
 
@@ -58,29 +59,29 @@ void OpenModal(ARGS&&... args)
 }
 
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
+using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using EditorFunc = function<void(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY&)>;
+using EditorFunc = function<void(Database&, EDITING_OBJECT, OBJECT_PROPERTY&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ApplyFunc = function<result<void, string>(Database&, EDITING_OBJECT const*, OBJECT_PROPERTY const&)>;
+using ApplyFunc = function<result<void, string>(Database&, EDITING_OBJECT, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using GetterFunc = function<OBJECT_PROPERTY const& (Database&, EDITING_OBJECT const*)>;
+using GetterFunc = function<OBJECT_PROPERTY (Database&, EDITING_OBJECT)>;
 
 void Display(Database& db, string const& val) { ImGui::Text("%s", val.c_str()); }
 void Display(Database& db, TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
 
 template <typename E, typename P>
-bool GenericEditor(const char* id, Database& db, E const* def, ValidateFunc<E, P> validate, EditorFunc<E, P> editor, ApplyFunc<E, P> apply, GetterFunc<E, P> getter)
+bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> validate, EditorFunc<E, P> editor, ApplyFunc<E, P> apply, GetterFunc<E, P> getter)
 {
 	bool changed = false;
 	using namespace ImGui;
-	static map<E const*, P> is_editing;
+	static map<E, P> is_editing;
 	PushID(id);
 	PushID(def);
 
 	if (auto it = is_editing.find(def); it == is_editing.end())
 	{
-		auto const& val = getter(db, def);
+		decltype(auto) val = getter(db, def);
 		if (validate(db, def, val).has_error())
 			is_editing[def] = val;
 	}
@@ -117,7 +118,7 @@ bool GenericEditor(const char* id, Database& db, E const* def, ValidateFunc<E, P
 	}
 	else
 	{
-		auto const& val = getter(db, def);
+		decltype(auto) val = getter(db, def);
 		Display(db, val); SameLine();
 		if (SmallButton("Edit"))
 			is_editing[def] = val;
@@ -130,7 +131,7 @@ bool GenericEditor(const char* id, Database& db, E const* def, ValidateFunc<E, P
 
 bool TypeNameEditor(Database& db, TypeDefinition const* def)
 {
-	return GenericEditor<TypeDefinition, string>("Type Name", db, def,
+	return GenericEditor<TypeDefinition const*, string>("Type Name", db, def,
 		&Database::ValidateTypeName,
 		[](Database& db, TypeDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -139,12 +140,12 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 		},
 		&Database::SetTypeName,
 		[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
-		);
+	);
 }
 
 bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 {
-	return GenericEditor<RecordDefinition, TypeReference>("Base Type", db, def,
+	return GenericEditor<RecordDefinition const*, TypeReference>("Base Type", db, def,
 		&Database::ValidateRecordBaseType,
 		[](Database& db, RecordDefinition const* def, TypeReference& current) {
 			using namespace ImGui;
@@ -166,13 +167,13 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 			}
 		},
 		&Database::SetRecordBaseType,
-			[](Database& db, RecordDefinition const* def) -> auto const& { return def->BaseType(); }
-		);
+		[](Database& db, RecordDefinition const* def) -> auto const& { return def->BaseType(); }
+	);
 }
 
 bool FieldNameEditor(Database& db, FieldDefinition const* def)
 {
-	return GenericEditor<FieldDefinition, string>("Field Name", db, def,
+	return GenericEditor<FieldDefinition const*, string>("Field Name", db, def,
 		&Database::ValidateFieldName,
 		[](Database& db, FieldDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -180,8 +181,8 @@ bool FieldNameEditor(Database& db, FieldDefinition const* def)
 			InputText("###fieldname", &name);
 		},
 		&Database::SetFieldName,
-			[](Database& db, FieldDefinition const* def) -> auto const& { return def->Name; }
-		);
+		[](Database& db, FieldDefinition const* def) -> auto const& { return def->Name; }
+	);
 }
 
 FilterFunc fltTemplateArgumentFilter(TemplateParameter const& param)
@@ -248,7 +249,7 @@ void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char
 
 bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 {
-	return GenericEditor<FieldDefinition, TypeReference>("Field Type", db, def,
+	return GenericEditor<FieldDefinition const*, TypeReference>("Field Type", db, def,
 		&Database::ValidateFieldType,
 		[](Database& db, FieldDefinition const* field, TypeReference& current) {
 			using namespace ImGui;
@@ -257,7 +258,7 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 		},
 		&Database::SetFieldType,
 		[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
-		);
+	);
 }
 
 void CheckError(result<void, string> val)
@@ -310,17 +311,6 @@ TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& us
 	}
 	return old_type;
 }
-
-/*
-TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& usage)
-{
-	for (auto& ref : usage.References)
-		ref->Type = db.VoidType();
-	auto before = old_type_reference.ToString();
-	auto after = usage.Field->FieldType.ToString();
-	return std::exchange(usage.Field->FieldType, old_type_reference);
-}
-*/
 
 void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeUsedInFieldType const& usage)
 {
@@ -741,7 +731,72 @@ void TypesTab()
 
 void DataTab()
 {
+	using namespace ImGui;
+	if (BeginTabBar("Data Stores"))
+	{
+		for (auto& [name, store] : mCurrentDatabase->DataStores())
+		{
+			if (BeginTabItem(name.c_str()))
+			{
+				if (Button("Add Value"))
+				{
+					auto name = FreshName("Value", [&](string_view name) { return store.HasValue(name); });
+					store.AddValue(json::object({ { "name", name }, { "type", TypeReference{ mCurrentDatabase->VoidType() }.ToJSON()}, {"value", json{}}}));
+				}
 
+				Separator();
+
+				for (auto& value : store.Roots())
+				{
+					PushID(&value);
+					string name = value.at("name");
+					TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
+					Text("Name: %s", name.c_str()); SameLine(); 
+
+					GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
+						/// validator
+						[&](Database& db, json* value, TypeReference const& new_type) -> result<void, string> {
+							if (store.ResultOfConversion(value->at("value"), old_type, new_type) == DataStore::ConversionResult::ConversionImpossible)
+								return failure("conversion to this type is impossible");
+							return success();
+						},
+						/// editor
+						[&](Database& db, json* value, TypeReference& current) {
+							TypeChooser(db, current, {});
+							auto result = store.ResultOfConversion(value->at("value"), old_type, current);
+							switch (result)
+							{
+							case DataStore::ConversionResult::DataCorrupted:
+								TextColored({ 1,1,0,1 }, "WARNING: Data might be corrupted if you attempt this type change!");
+								break;
+							case DataStore::ConversionResult::DataLost:
+								TextColored({ 1,1,0,1 }, "WARNING: Data WILL BE LOST if you attempt this type change!");
+								break;
+							}
+						},
+						/// setter
+						[&](Database& db, json* value, TypeReference const& new_type) -> result<void, string> {
+							TypeReference old_type{ db.Schema(), value->at("type") };
+							value->at("type") = new_type.ToJSON();
+							return store.Convert(value->at("value"), old_type, new_type);
+						},
+						/// getter
+						[](Database& db, json* value) { return TypeReference{ db.Schema(), value->at("type") }; }
+					);
+
+					Text("Value:");
+					store.EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"));
+					PopID();
+				}
+
+				EndTabItem();
+			}
+		}
+		if (TabItemButton("+"))
+		{
+		}
+		EndTabBar();
+	}
 }
 
 void InterfacesTab()

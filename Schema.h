@@ -2,8 +2,8 @@
 
 enum class DefinitionType
 {
-	Enum,
 	BuiltIn,
+	Enum,
 	Struct,
 	Class,
 };
@@ -22,6 +22,10 @@ struct TypeReference
 	TypeReference(TypeReference&&) noexcept = default;
 	TypeReference& operator=(TypeReference const&) noexcept = default;
 	TypeReference& operator=(TypeReference&&) noexcept = default;
+
+	TypeReference(Schema const& schema, json const& val);
+
+	bool operator==(TypeReference const& other) const noexcept = default;
 
 	explicit TypeReference(TypeDefinition const* value) noexcept;
 
@@ -148,7 +152,7 @@ struct RecordDefinition : TypeDefinition
 
 	vector<FieldDefinition const*> AllFieldsOrdered() const;
 
-	string FreshFieldName() const;
+	//string FreshFieldName() const;
 
 	virtual json ToJSON() const override;
 	virtual void FromJSON(Schema const& schema, json const& value) override;

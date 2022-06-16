@@ -17,7 +17,7 @@ struct Database
 	template <typename T>
 	inline constexpr static T* mut(T const* v) noexcept { return const_cast<T*>(v); }
 
-	string FreshTypeName(string_view base) const;
+	//string FreshTypeName(string_view base) const;
 
 	/// Validations
 
@@ -90,7 +90,7 @@ struct Database
 
 	auto const& Directory() const noexcept { return mDirectory; }
 	auto const& Schema() const noexcept { return mSchema; }
-	auto const& DataStores() const noexcept { return mDataStores; }
+	auto& DataStores() noexcept { return mDataStores; }
 
 	auto VoidType() const noexcept { return mVoid; }
 
@@ -125,49 +125,5 @@ private:
 	::Schema mSchema;
 	map<string, DataStore, less<>> mDataStores;
 
-	/*
-	enum class TypeUsageType
-	{
-		BaseType,
-		FieldType,
-	};
-
-	struct TypeUsage
-	{
-		TypeUsageType UsageType = {};
-		RecordDefinition const* Record = nullptr;
-		size_t FieldIndex = 0;
-		TypeReference* Reference = nullptr;
-
-		int Action = 0;
-	};
-
-	struct TypeUsageList
-	{
-		vector<TypeDefinition const*> BaseTypes;
-		vector<TypeUsage> FieldUsages;
-
-		template <typename CALLBACK>
-		void LocateTypeReference(CALLBACK&& callback, TypeDefinition const* type, TypeReference& start_reference)
-		{
-			if (start_reference.Type == type)
-				callback(&start_reference);
-			for (auto& templ : start_reference.TemplateArguments)
-				if (auto arg = get_if<TypeReference>(&templ))
-					LocateTypeReference(callback, type, *arg);
-		}
-
-		void LocateTypeReference(TypeDefinition const* type, FieldDefinition* def)
-		{
-			LocateTypeReference([&, this](TypeReference* ref) {
-				FieldUsages.emplace_back(def->ParentRecord, def->ParentRecord->FieldIndexOf(def), ref);
-			}, type, def->FieldType);
-		}
-	};
-
-	TypeUsageList LocateTypeReferences(Def type);
-	*/
-
-	result<void, string> CheckDataStore(function<result<void,string>(DataStore const&)> validaate_func);
 	void UpdateDataStore(function<void(DataStore&)> update_func);
 };

@@ -4,11 +4,12 @@
 #include "Database.h"
 
 DataStore::DataStore(Database const& db)
+	: DB(db)
 {
 	Storage = json::object({
 		{ "format", "json-tool-editable-v1" },
 		{ "gcheap", json::object() },
-		{ "roots", json::object() },
+		{ "roots", json::array() },
 		{ "schema", json::object({
 			{ "uri", db.Directory().string() },
 			{ "version", db.Schema().Version() },
@@ -16,11 +17,15 @@ DataStore::DataStore(Database const& db)
 		})},
 		{ "fielddata", json::object() }
 	});
+
+	InitializeHandlers();
 }
 
 DataStore::DataStore(Database const& db, json storage)
-	: Storage(move(storage))
+	: DB(db) 
+	, Storage(move(storage))
 {
+	InitializeHandlers();
 }
 
 void DataStore::AddNewStruct(string_view name)
@@ -88,4 +93,22 @@ void DataStore::DeleteType(string_view type_name)
 	auto& field_data = Storage.at("fielddata");
 	if (auto it = field_data.find(type_name); it != field_data.end())
 		field_data.erase(it);
+}
+
+bool DataStore::HasValue(string_view name) const
+{
+	for (auto& value : Storage.at("roots"))
+	{
+		if (!value.is_object())
+			continue;
+		if (auto it = value.find("name"); it != value.end())
+			if (it->is_string() && it->get_ref<string const&>() == name)
+				return true;
+	}
+	return false;
+}
+
+void DataStore::AddValue(json value)
+{
+	Storage.at("roots").push_back(move(value));
 }

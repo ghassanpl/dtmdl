@@ -69,14 +69,15 @@ void TypeReference::FromJSON(Schema const& schema, json const& value)
 				if (arg.is_number())
 					TemplateArguments.emplace_back((uint64_t)arg);
 				else
-				{
-					TypeReference ref;
-					ref.FromJSON(schema, arg);
-					TemplateArguments.push_back(move(ref));
-				}
+					TemplateArguments.push_back(TypeReference{schema, arg});
 			}
 		}
 	}
+}
+
+TypeReference::TypeReference(Schema const& schema, json const& val)
+{
+	FromJSON(schema, val);
 }
 
 TypeReference::TypeReference(TypeDefinition const* value) noexcept : Type(value), TemplateArguments(value ? value->TemplateParameters().size() : 0) { }
@@ -148,6 +149,7 @@ vector<FieldDefinition const*> RecordDefinition::AllFieldsOrdered() const
 	return result;
 }
 
+/*
 string RecordDefinition::FreshFieldName() const
 {
 	string candidate = "Field";
@@ -156,6 +158,7 @@ string RecordDefinition::FreshFieldName() const
 		candidate = format("Field{}", num++);
 	return candidate;
 }
+*/
 
 json RecordDefinition::ToJSON() const
 {

@@ -1,9 +1,11 @@
 #pragma once
 
 struct Database;
+struct TypeReference;
 
 struct DataStore
 {
+	Database const& DB;
 	json Storage;
 
 	DataStore(Database const& db);
@@ -23,4 +25,117 @@ struct DataStore
 
 	bool HasTypeData(string_view type_name) const;
 	void DeleteType(string_view type_name);
+
+	bool HasValue(string_view name) const;
+	void AddValue(json value);
+
+	decltype(auto) Roots()
+	{
+		return Storage.at("roots");
+	}
+
+	/// ////////////////////////////////////// ///
+
+
+	void ViewValue(TypeReference const& type, json& value, json const& field_properties = empty_json);
+	void EditValue(TypeReference const& type, json& value, json const& field_properties = empty_json);
+
+	enum class ConversionResult
+	{
+		ConversionImpossible,
+		DataPreserved,
+		DataCorrupted,
+		DataLost,
+	};
+
+	ConversionResult ResultOfConversion(json const& value, TypeReference const& from, TypeReference const& to);
+	result<void, string> Convert(json& value, TypeReference const& from, TypeReference const& to);
+	result<void, string> InitializeValue(TypeReference const& type, json& value);
+
+private:
+
+	using EditorFunction = void(DataStore&, TypeReference const&, json&, json const&);
+	using ViewFunction = void(DataStore&, TypeReference const&, json const&, json const&);
+	using ConversionFunction = result<void, string>(DataStore&, json&, TypeReference const&, TypeReference const&);
+	using InitializationFunction = result<void, string>(DataStore&, TypeReference const&, json&);
+
+	struct BuiltinTypeHandler
+	{
+		function<EditorFunction> EditorFunc;
+		function<ViewFunction> ViewFunc;
+		function<InitializationFunction> InitializationFunc;
+		map<string, function<ConversionFunction>, less<>> ConversionFuncs;
+	};
+
+	map<string, BuiltinTypeHandler, less<>> mBuiltIns;
+
+	void EditVoid(TypeReference const& type, json& value, json const& field_properties);
+	void EditF32(TypeReference const& type, json& value, json const& field_properties);
+	void EditF64(TypeReference const& type, json& value, json const& field_properties);
+	void EditI8(TypeReference const& type, json& value, json const& field_properties);
+	void EditI16(TypeReference const& type, json& value, json const& field_properties);
+	void EditI32(TypeReference const& type, json& value, json const& field_properties);
+	void EditI64(TypeReference const& type, json& value, json const& field_properties);
+	void EditU8(TypeReference const& type, json& value, json const& field_properties);
+	void EditU16(TypeReference const& type, json& value, json const& field_properties);
+	void EditU32(TypeReference const& type, json& value, json const& field_properties);
+	void EditU64(TypeReference const& type, json& value, json const& field_properties);
+	void EditBool(TypeReference const& type, json& value, json const& field_properties);
+	void EditString(TypeReference const& type, json& value, json const& field_properties);
+	void EditBytes(TypeReference const& type, json& value, json const& field_properties);
+	void EditFlags(TypeReference const& type, json& value, json const& field_properties);
+	void EditList(TypeReference const& type, json& value, json const& field_properties);
+	void EditArray(TypeReference const& type, json& value, json const& field_properties);
+	void EditRef(TypeReference const& type, json& value, json const& field_properties);
+	void EditOwn(TypeReference const& type, json& value, json const& field_properties);
+	void EditVariant(TypeReference const& type, json& value, json const& field_properties);
+
+	result<void, string> InitializeVoid(TypeReference const& type, json& value);
+	result<void, string> InitializeF32(TypeReference const& type, json& value);
+	result<void, string> InitializeF64(TypeReference const& type, json& value);
+	result<void, string> InitializeI8(TypeReference const& type, json& value);
+	result<void, string> InitializeI16(TypeReference const& type, json& value);
+	result<void, string> InitializeI32(TypeReference const& type, json& value);
+	result<void, string> InitializeI64(TypeReference const& type, json& value);
+	result<void, string> InitializeU8(TypeReference const& type, json& value);
+	result<void, string> InitializeU16(TypeReference const& type, json& value);
+	result<void, string> InitializeU32(TypeReference const& type, json& value);
+	result<void, string> InitializeU64(TypeReference const& type, json& value);
+	result<void, string> InitializeBool(TypeReference const& type, json& value);
+	result<void, string> InitializeString(TypeReference const& type, json& value);
+	result<void, string> InitializeBytes(TypeReference const& type, json& value);
+	result<void, string> InitializeFlags(TypeReference const& type, json& value);
+	result<void, string> InitializeList(TypeReference const& type, json& value);
+	result<void, string> InitializeArray(TypeReference const& type, json& value);
+	result<void, string> InitializeRef(TypeReference const& type, json& value);
+	result<void, string> InitializeOwn(TypeReference const& type, json& value);
+	result<void, string> InitializeVariant(TypeReference const& type, json& value);
+
+	void ViewVoid(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewF32(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewF64(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewI8(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewI16(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewI32(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewI64(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewU8(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewU16(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewU32(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewU64(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewBool(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewString(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewBytes(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewFlags(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewList(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewArray(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewRef(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewOwn(TypeReference const& type, json const& value, json const& field_properties);
+	void ViewVariant(TypeReference const& type, json const& value, json const& field_properties);
+
+	template <typename FUNC>
+	void Do(TypeReference const& type, json& value, FUNC&& func);
+
+	void InitializeHandlers();
+
+	bool IsVoid(TypeReference const& ref) const;
 };
