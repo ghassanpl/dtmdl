@@ -743,6 +743,16 @@ void DataTab()
 					auto name = FreshName("Value", [&](string_view name) { return store.HasValue(name); });
 					store.AddValue(json::object({ { "name", name }, { "type", TypeReference{ mCurrentDatabase->VoidType() }.ToJSON()}, {"value", json{}}}));
 				}
+				SameLine();
+				if (Button("Save Data"))
+				{
+
+				}
+				SameLine();
+				if (Button("Revert Data"))
+				{
+
+				}
 
 				Separator();
 
@@ -785,7 +795,8 @@ void DataTab()
 					);
 
 					Text("Value:");
-					store.EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"));
+					json::json_pointer ptr{ "/" + name };
+					store.EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"), {}, ptr);
 					PopID();
 				}
 

@@ -34,3 +34,5 @@ string FreshName(string_view base, FUNC&& func)
 		candidate = format("{}{}", base, num++);
 	return candidate;
 }
+
+void CheckError(result<void, string> val);

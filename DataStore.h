@@ -37,8 +37,8 @@ struct DataStore
 	/// ////////////////////////////////////// ///
 
 
-	void ViewValue(TypeReference const& type, json& value, json const& field_properties = empty_json);
-	void EditValue(TypeReference const& type, json& value, json const& field_properties = empty_json);
+	void ViewValue(TypeReference const& type, json& value, json const& field_properties);
+	bool EditValue(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path);
 
 	enum class ConversionResult
 	{
@@ -54,7 +54,7 @@ struct DataStore
 
 private:
 
-	using EditorFunction = void(DataStore&, TypeReference const&, json&, json const&);
+	using EditorFunction = bool(DataStore&, TypeReference const&, json&, json const&, json::json_pointer);
 	using ViewFunction = void(DataStore&, TypeReference const&, json const&, json const&);
 	using ConversionFunction = result<void, string>(DataStore&, json&, TypeReference const&, TypeReference const&);
 	using InitializationFunction = result<void, string>(DataStore&, TypeReference const&, json&);
@@ -69,26 +69,26 @@ private:
 
 	map<string, BuiltinTypeHandler, less<>> mBuiltIns;
 
-	void EditVoid(TypeReference const& type, json& value, json const& field_properties);
-	void EditF32(TypeReference const& type, json& value, json const& field_properties);
-	void EditF64(TypeReference const& type, json& value, json const& field_properties);
-	void EditI8(TypeReference const& type, json& value, json const& field_properties);
-	void EditI16(TypeReference const& type, json& value, json const& field_properties);
-	void EditI32(TypeReference const& type, json& value, json const& field_properties);
-	void EditI64(TypeReference const& type, json& value, json const& field_properties);
-	void EditU8(TypeReference const& type, json& value, json const& field_properties);
-	void EditU16(TypeReference const& type, json& value, json const& field_properties);
-	void EditU32(TypeReference const& type, json& value, json const& field_properties);
-	void EditU64(TypeReference const& type, json& value, json const& field_properties);
-	void EditBool(TypeReference const& type, json& value, json const& field_properties);
-	void EditString(TypeReference const& type, json& value, json const& field_properties);
-	void EditBytes(TypeReference const& type, json& value, json const& field_properties);
-	void EditFlags(TypeReference const& type, json& value, json const& field_properties);
-	void EditList(TypeReference const& type, json& value, json const& field_properties);
-	void EditArray(TypeReference const& type, json& value, json const& field_properties);
-	void EditRef(TypeReference const& type, json& value, json const& field_properties);
-	void EditOwn(TypeReference const& type, json& value, json const& field_properties);
-	void EditVariant(TypeReference const& type, json& value, json const& field_properties);
+	bool EditVoid(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditF32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditF64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditI8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditI16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditI32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditI64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditU8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditU16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditU32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditU64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditBool(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditString(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditBytes(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditFlags(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditList(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditArray(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditRef(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditOwn(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
+	bool EditVariant(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path);
 
 	result<void, string> InitializeVoid(TypeReference const& type, json& value);
 	result<void, string> InitializeF32(TypeReference const& type, json& value);
@@ -138,4 +138,10 @@ private:
 	void InitializeHandlers();
 
 	bool IsVoid(TypeReference const& ref) const;
+	template <typename JSON_TYPE>
+	JSON_TYPE* CheckType(TypeReference const& type, json& value, json const& field_properties);
+	template <typename JSON_TYPE, typename FUNC>
+	bool Edit(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func);
+
+	void LogDataChange(json::json_pointer const& value_path, json const& value);
 };
