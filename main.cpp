@@ -751,9 +751,9 @@ void DataTab()
 					PushID(&value);
 					string name = value.at("name");
 					TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
-					Text("Name: %s", name.c_str()); SameLine(); 
+					Text("Name: %s", name.c_str()); SameLine(); SmallButton("Edit");
 
-					GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
+					Text("Type:"); SameLine(); GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
 						/// validator
 						[&](Database& db, json* value, TypeReference const& new_type) -> result<void, string> {
 							if (store.ResultOfConversion(value->at("value"), old_type, new_type) == DataStore::ConversionResult::ConversionImpossible)

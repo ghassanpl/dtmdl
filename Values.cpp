@@ -5,10 +5,44 @@
 
 #include "imgui.h"
 
+template <typename ... T> struct concat;
+template <typename ... Ts, typename ... Us>
+struct concat<tuple<Ts...>, tuple<Us...>>
+{
+	typedef tuple<Ts..., Us...> type;
+};
+
+template <typename T, typename U> struct cross_product;
+
+template <typename ...Us>
+struct cross_product<tuple<>, tuple<Us...>> {
+	typedef tuple<> type;
+};
+
+template <typename T, typename ...Ts, typename ...Us>
+struct cross_product<tuple<T, Ts...>, tuple<Us...>> {
+	typedef typename concat<
+		tuple<pair<T, Us>...>,
+		typename cross_product<tuple<Ts...>, tuple<Us...>>::type
+	>::type type;
+};
+
+string name_of(type_identity<float>) { return "f32"; }
+string name_of(type_identity<double>) { return "f64"; }
+string name_of(type_identity<int8_t>) { return "i8"; }
+string name_of(type_identity<int16_t>) { return "i16"; }
+string name_of(type_identity<int32_t>) { return "i32"; }
+string name_of(type_identity<int64_t>) { return "i64"; }
+string name_of(type_identity<uint8_t>) { return "u8"; }
+string name_of(type_identity<uint16_t>) { return "u16"; }
+string name_of(type_identity<uint32_t>) { return "u32"; }
+string name_of(type_identity<uint64_t>) { return "u64"; }
+
 void DataStore::InitializeHandlers()
 {
 	mBuiltIns = {
 		{ "void", { &DataStore::EditVoid, &DataStore::ViewVoid, &DataStore::InitializeVoid,  } },
+
 		{ "f32", { &DataStore::EditF32, &DataStore::ViewF32, &DataStore::InitializeF32,  } },
 		{ "f64", { &DataStore::EditF64, &DataStore::ViewF64, &DataStore::InitializeF64,  } },
 		{ "i8", { &DataStore::EditI8, &DataStore::ViewI8, &DataStore::InitializeI8,  } },
@@ -19,6 +53,7 @@ void DataStore::InitializeHandlers()
 		{ "u16", { &DataStore::EditU16, &DataStore::ViewU16, &DataStore::InitializeU16,  } },
 		{ "u32", { &DataStore::EditU32, &DataStore::ViewU32, &DataStore::InitializeU32,  } },
 		{ "u64", { &DataStore::EditU64, &DataStore::ViewU64, &DataStore::InitializeU64,  } },
+
 		{ "bool", { &DataStore::EditBool, &DataStore::ViewBool, &DataStore::InitializeBool,  } },
 		{ "string", { &DataStore::EditString, &DataStore::ViewString, &DataStore::InitializeString,  } },
 		{ "bytes", { &DataStore::EditBytes, &DataStore::ViewBytes, &DataStore::InitializeBytes,  } },
@@ -30,7 +65,25 @@ void DataStore::InitializeHandlers()
 		{ "variant", { &DataStore::EditVariant, &DataStore::ViewVariant, &DataStore::InitializeVariant,  } },
 	};
 
-	/// TODO: Add conversions
+	auto AddSimpleConversion = [&]<typename A, typename B>(type_identity<pair<A, B>>) {
+		if constexpr (!is_same_v<A, B>)
+		{
+			mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+				value = (A)(B)value;
+				return success();
+			};
+		}
+	};
+	auto AddSimpleConversions = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>) {
+		(AddSimpleConversion(type_identity<PAIRS>{}), ...);
+	};
+	auto AddSimpleConversionPairs = [&]<typename... ELEMENTS>(type_identity<tuple<ELEMENTS...>>) {
+		AddSimpleConversions(type_identity<typename cross_product<tuple<ELEMENTS...>, tuple<ELEMENTS...>>::type>{});
+	};
+	using numeric_type_list = tuple<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
+	AddSimpleConversionPairs(type_identity<numeric_type_list>{});
+
+	/// TODO: Add more conversions
 }
 
 bool DataStore::IsVoid(TypeReference const& ref) const
@@ -123,6 +176,7 @@ result<void, string> DataStore::Convert(json& value, TypeReference const& from, 
 	}
 	return failure(format("unknown type type: {}", magic_enum::enum_name(from.Type->Type())));
 }
+
 template <typename FUNC>
 void DataStore::Do(TypeReference const& type, json& value, FUNC&& func)
 {
@@ -154,7 +208,7 @@ void DataStore::ViewValue(TypeReference const& type, json& value, json const& fi
 void DataStore::EditValue(TypeReference const& type, json& value, json const& field_properties)
 {
 	Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) {
-		handlers.ViewFunc(*this, type, value, field_properties);
+		//handlers.ViewFunc(*this, type, value, field_properties);
 		handlers.EditorFunc(*this, type, value, field_properties); 
 	});
 }
