@@ -1,1 +1,6 @@
 * make backup zips IN the database directory
+* maybe plugin-able additional builtin types? like:
+	* json
+	* glm vecs
+	* filesystem path
+	* other types you might have in your code-base

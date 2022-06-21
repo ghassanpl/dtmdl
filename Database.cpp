@@ -680,9 +680,12 @@ void Database::SaveAll()
 
 	for (auto& [name, store] : mDataStores)
 	{
+		/*
 		std::ofstream out{ mDirectory / format("{}.datastore", name) };
 		out.exceptions(std::ios::badbit | std::ios::failbit);
 		to_wilson_stream(out, store.Storage);
+		*/
+		save_ubjson_file(mDirectory / format("{}.datastore", name), store.Storage);
 	}
 
 	mChangeLog.flush();
@@ -701,7 +704,8 @@ void Database::LoadAll()
 		if (path.extension() == ".datastore")
 		{
 			mDataStores.erase(path.stem().string());
-			mDataStores.insert({ path.stem().string(), DataStore{*this, try_load_wilson_file(path)} });
+			//mDataStores.insert({ path.stem().string(), DataStore{*this, try_load_wilson_file(path)} });
+			mDataStores.insert({ path.stem().string(), DataStore{*this, try_load_ubjson_file(path)} });
 		}
 	}
 }

@@ -138,10 +138,9 @@ private:
 	void InitializeHandlers();
 
 	bool IsVoid(TypeReference const& ref) const;
-	template <typename JSON_TYPE>
-	JSON_TYPE* CheckType(TypeReference const& type, json& value, json const& field_properties);
-	template <typename JSON_TYPE, typename FUNC>
-	bool Edit(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func);
 
-	void LogDataChange(json::json_pointer const& value_path, json const& value);
+	template <typename JSON_TYPE, typename FUNC>
+	bool EditScalar(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func);
+
+	void LogDataChange(json::json_pointer const& value_path, json const& from, json const& value);
 };

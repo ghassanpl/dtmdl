@@ -4,6 +4,7 @@
 #include "Database.h"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
@@ -37,6 +38,8 @@ string name_of(type_identity<uint8_t>) { return "u8"; }
 string name_of(type_identity<uint16_t>) { return "u16"; }
 string name_of(type_identity<uint32_t>) { return "u32"; }
 string name_of(type_identity<uint64_t>) { return "u64"; }
+string name_of(type_identity<bool>) { return "bool"; }
+string name_of(type_identity<string>) { return "string"; }
 
 void DataStore::InitializeHandlers()
 {
@@ -65,25 +68,51 @@ void DataStore::InitializeHandlers()
 		{ "variant", { &DataStore::EditVariant, &DataStore::ViewVariant, &DataStore::InitializeVariant,  } },
 	};
 
-	auto AddSimpleConversion = [&]<typename A, typename B>(type_identity<pair<A, B>>) {
+	auto AddNumericConversion = [&]<typename A, typename B>(type_identity<pair<A, B>>) {
 		if constexpr (!is_same_v<A, B>)
 		{
 			mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
-				value = (A)(B)value;
+				value = (B)(A)value;
 				return success();
 			};
 		}
 	};
-	auto AddSimpleConversions = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>) {
-		(AddSimpleConversion(type_identity<PAIRS>{}), ...);
+	auto AddConversionForEachPair = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>, auto&& conversion_func) {
+		(conversion_func(type_identity<PAIRS>{}), ...);
 	};
-	auto AddSimpleConversionPairs = [&]<typename... ELEMENTS>(type_identity<tuple<ELEMENTS...>>) {
-		AddSimpleConversions(type_identity<typename cross_product<tuple<ELEMENTS...>, tuple<ELEMENTS...>>::type>{});
+	auto AddConversionForTypeCrossProduct = [&]<typename... ELEMENTS1, typename... ELEMENTS2>(type_identity<tuple<ELEMENTS1...>>, type_identity<tuple<ELEMENTS2...>>, auto&& conversion_func) {
+		AddConversionForEachPair(type_identity<typename cross_product<tuple<ELEMENTS1...>, tuple<ELEMENTS2...>>::type>{}, conversion_func);
 	};
 	using numeric_type_list = tuple<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
-	AddSimpleConversionPairs(type_identity<numeric_type_list>{});
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
+	AddConversionForTypeCrossProduct(type_identity<tuple<bool>>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<bool>>{}, AddNumericConversion);
 
-	/// TODO: Add more conversions
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<string>>{}, [&]<typename A, typename B>(type_identity<pair<A, B>>) {
+		mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+			value = ::std::to_string((A)value);
+			/// TODO: using to_chars would be faster
+			return success();
+		};
+	});
+
+	AddConversionForTypeCrossProduct(type_identity<tuple<string>>{}, type_identity<numeric_type_list>{}, [&]<typename A, typename B>(type_identity<pair<A, B>>) {
+		mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+			auto& strref = value.get_ref<json::string_t const&>();
+			B dest_value{};
+			ignore = from_chars(to_address(begin(strref)), to_address(end(strref)), dest_value);
+			value = dest_value;
+			return success();
+		};
+	});
+
+	/// TODO: Add more conversions:
+	/// string <-> bytes
+	/// bytes <-> list<u8>
+	/// list<T> <-> array<T, N>
+	/// flags<E> <-> u64
+	/// variant<T1, T2, ...> <-> T1/T2/...
+	/// variant<T1, T2, ...> <-> variant<U1, U2, ...> 
 }
 
 bool DataStore::IsVoid(TypeReference const& ref) const
@@ -308,17 +337,12 @@ void DataStore::ViewVariant(TypeReference const& type, json const& value, json c
 
 using namespace ImGui;
 
-template <typename JSON_TYPE>
-JSON_TYPE* DataStore::CheckType(TypeReference const& type, json& value, json const& field_properties)
-{
-	if (auto ptr = value.get_ptr<JSON_TYPE*>())
-		return ptr;
+static constexpr bool log_changes = false;
 
-	auto issue = format("WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(value.type()));
-	TextColored({ 0,1,1,1 }, "%s", issue.c_str());
-	if (SmallButton("Reset Value"))
-		CheckError(InitializeValue(type, value));
-	return nullptr;
+void DataStore::LogDataChange(json::json_pointer const& value_path, json const& from, json const& value)
+{
+	if constexpr (log_changes)
+		cout << format("Data store '{}': '{}' changed from '{}' to '{}'\n", "...", value_path.to_string(), from.dump(), value.dump());
 }
 
 bool DataStore::EditVoid(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
@@ -330,6 +354,8 @@ bool DataStore::EditVoid(TypeReference const& type, json& value, json const& fie
 		if (SmallButton("Reset Value"))
 		{
 			CheckError(InitializeValue(type, value));
+			if constexpr (log_changes)
+				LogDataChange(value_path, json{}, value);
 			return true;
 		}
 		return false;
@@ -339,46 +365,155 @@ bool DataStore::EditVoid(TypeReference const& type, json& value, json const& fie
 }
 
 template <typename JSON_TYPE, typename FUNC>
-bool DataStore::Edit(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func)
+bool DataStore::EditScalar(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func)
 {
 	bool edited = false;
-	if (auto ptr = CheckType<JSON_TYPE>(type, value, field_properties))
+	json previous_val{};
+	PushID(&value);
+	if (auto ptr = value.get_ptr<JSON_TYPE*>())
 	{
-		PushID(&value);
+		if constexpr (log_changes)
+			previous_val = value;
 		edited = func(type, *ptr, field_properties, value_path);
-		if (edited)
-			LogDataChange(value_path, value_path);
-		PopID();
 	}
+	else
+	{
+		auto issue = format("WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(value.type()));
+		TextColored({ 0,1,1,1 }, "%s", issue.c_str());
+		if (SmallButton("Reset Value"))
+		{
+			CheckError(InitializeValue(type, value));
+			edited = true;
+		}
+	}
+
+	if constexpr (log_changes)
+	{
+		if (edited)
+			LogDataChange(value_path, previous_val, value);
+	}
+	PopID();
 	return edited;
 }
 
-#define EDIT(json_type) Edit<json::json_type>(type, value, field_properties, value_path, [](TypeReference const& type, json::json_type& value, json const& field_properties, json::json_pointer const& value_path)
+#define EDIT(json_type) EditScalar<json::json_type>(type, value, field_properties, value_path, [](TypeReference const& type, json::json_type& value, json const& field_properties, json::json_pointer const& value_path) {
+#define EDITEND() }); return false;
 
 bool DataStore::EditF32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
 {
-	EDIT(number_float_t) {
+	EDIT(number_float_t)
 		InputDouble("", &value, 0, 0, "%g");
 		return IsItemDeactivatedAfterEdit();
-	});
-	return false;
+	EDITEND()
 }
 
-bool DataStore::EditF64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditI8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditI16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditI32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditI64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditU8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditU16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditU32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditU64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditBool(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditString(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditBytes(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditFlags(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditList(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditArray(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
-bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path) { return false; }
+bool DataStore::EditF64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_float_t)
+		InputDouble("", &value, 0, 0, "%g");
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditI8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{ 
+	EDIT(number_integer_t)
+		static constexpr json::number_integer_t min = std::numeric_limits<int8_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int8_t>::max();
+		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditI16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_integer_t)
+		static constexpr json::number_integer_t min = std::numeric_limits<int16_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int16_t>::max();
+		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+bool DataStore::EditI32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_integer_t)
+		static constexpr json::number_integer_t min = std::numeric_limits<int32_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int32_t>::max();
+		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+bool DataStore::EditI64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_integer_t)
+		DragScalar("", ImGuiDataType_S64, &value);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditU8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_unsigned_t)
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint8_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint8_t>::max();
+		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditU16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_unsigned_t)
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint16_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint16_t>::max();
+		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+bool DataStore::EditU32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_unsigned_t)
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint32_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint32_t>::max();
+		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+bool DataStore::EditU64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(number_unsigned_t)
+		DragScalar("", ImGuiDataType_U64, &value);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditBool(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(boolean_t)
+		return Checkbox("Value", &value);
+	EDITEND()
+}
+
+bool DataStore::EditString(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(string_t)
+		InputText("", &value);
+		return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditList(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+{
+	EDIT(array_t)
+
+		return false;
+	//return IsItemDeactivatedAfterEdit();
+	EDITEND()
+}
+
+bool DataStore::EditBytes(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditFlags(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditArray(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
