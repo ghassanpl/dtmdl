@@ -165,12 +165,12 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 			{
 				if (Selectable("[none]", current.Type == nullptr))
 					current = TypeReference{};
-				for (auto& type : db.Definitions())
+				for (auto type : db.Definitions())
 				{
-					if (def->Type() == type->Type() && !db.IsParent(def, type.get()))
+					if (def->Type() == type->Type() && !db.IsParent(def, type))
 					{
-						if (Selectable(type->Name().c_str(), type.get() == current.Type))
-							current = TypeReference{ type.get() };
+						if (Selectable(type->Name().c_str(), type == current.Type))
+							current = TypeReference{ type };
 					}
 				}
 				EndCombo();
@@ -216,13 +216,13 @@ void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char
 	}
 	if (BeginCombo(label, current.c_str()))
 	{
-		for (auto& type : db.Definitions())
+		for (auto type : db.Definitions())
 		{
-			if (!filter || filter(type.get()))
+			if (!filter || filter(type))
 			{
-				if (Selectable(type->Name().c_str(), type.get() == ref.Type))
+				if (Selectable(type->Name().c_str(), type == ref.Type))
 				{
-					ref = TypeReference{ type.get() };
+					ref = TypeReference{ type };
 				}
 			}
 		}
@@ -470,12 +470,12 @@ struct DeleteFieldModal : IModal
 struct DeleteTypeModal : IModal
 {
 	Database& mDB;
-	RecordDefinition* mRecord;
+	RecordDefinition const* mRecord;
 	vector<TypeUsage> mUsages;
 	vector<pair<int, std::any>> mSettings;
 	bool mMakeBackup = true;
 
-	DeleteTypeModal(Database& db, RecordDefinition* def, vector<TypeUsage> usages)
+	DeleteTypeModal(Database& db, RecordDefinition const* def, vector<TypeUsage> usages)
 		: mDB(db)
 		, mRecord(def)
 		, mUsages(move(usages))
@@ -564,7 +564,7 @@ struct DeleteTypeModal : IModal
 	}
 };
 
-void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
+void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 {
 	using namespace ImGui;
 	Text("Name: "); SameLine(); TypeNameEditor(db, def);
@@ -683,7 +683,7 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 	}
 }
 
-void EditEnum(Database& db, EnumDefinition* def)
+void EditEnum(Database& db, EnumDefinition const* def)
 {
 
 }
@@ -707,10 +707,10 @@ void TypesTab()
 	Separator();
 	Spacing();
 
-	for (auto& def : mCurrentDatabase->Definitions())
+	for (auto def : mCurrentDatabase->Definitions())
 	{
-		PushID(def.get());
-		if (auto strukt = dynamic_cast<StructDefinition*>(def.get()))
+		PushID(def);
+		if (auto strukt = dynamic_cast<StructDefinition const*>(def))
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{
@@ -719,7 +719,7 @@ void TypesTab()
 				Unindent();
 			}
 		}
-		else if (auto klass = dynamic_cast<ClassDefinition*>(def.get()))
+		else if (auto klass = dynamic_cast<ClassDefinition const*>(def))
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{
@@ -728,7 +728,7 @@ void TypesTab()
 				Unindent();
 			}
 		}
-		else if (auto eenoom = dynamic_cast<EnumDefinition*>(def.get()))
+		else if (auto eenoom = dynamic_cast<EnumDefinition const*>(def))
 		{
 			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 			{

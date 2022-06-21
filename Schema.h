@@ -233,12 +233,19 @@ protected:
 
 struct Schema
 {
-	vector<unique_ptr<TypeDefinition>> Definitions;
+	auto Definitions() const noexcept { return mDefinitions | views::transform([](unique_ptr<TypeDefinition> const& element) -> TypeDefinition const* const { return element.get(); }); }
 
 	TypeDefinition const* ResolveType(string_view name) const;
-	TypeDefinition* ResolveType(string_view name);
 
 	/// TODO: These
 	size_t Version() const { return 1; }
 	size_t Hash() const { return 0; }
+
+private:
+
+	vector<unique_ptr<TypeDefinition>> mDefinitions;
+
+	TypeDefinition* ResolveType(string_view name);
+
+	friend struct Database;
 };

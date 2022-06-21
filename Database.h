@@ -34,7 +34,7 @@ struct Database
 	using Rec = RecordDefinition const*;
 	using Fld = FieldDefinition const*;
 
-	auto const& Definitions() const noexcept { return mSchema.Definitions; }
+	auto Definitions() const noexcept { return mSchema.Definitions(); }
 
 	//TypeDefinition const* ResolveType(string_view name) const;
 
@@ -117,7 +117,7 @@ private:
 	{
 		auto ptr = unique_ptr<T>(new T{ forward<ARGS>(args)... });
 		auto result = ptr.get();
-		mSchema.Definitions.push_back(move(ptr));
+		mSchema.mDefinitions.push_back(move(ptr));
 		return result;
 	}
 

@@ -302,7 +302,7 @@ vector<TypeUsage> Database::LocateTypeUsages(Def type) const
 {
 	vector<TypeUsage> usage_list;
 
-	for (auto& def : mSchema.Definitions)
+	for (auto def : mSchema.Definitions())
 	{
 		if (auto record = def->AsRecord())
 		{
@@ -357,8 +357,8 @@ result<void, string> Database::DeleteType(Def type)
 	});
 
 	/// Schema Change
-	auto it = ranges::find_if(mSchema.Definitions, [type](auto& def) { return def.get() == type; });
-	mSchema.Definitions.erase(it);
+	auto it = ranges::find_if(mSchema.mDefinitions, [type](auto& def) { return def.get() == type; });
+	mSchema.mDefinitions.erase(it);
 
 	/// Save
 	SaveAll();
@@ -535,7 +535,7 @@ json Database::SaveSchema() const
 	result["version"] = 1;
 	{
 		auto& types = result["types"] = json::object();
-		for (auto& type : mSchema.Definitions)
+		for (auto type : mSchema.Definitions())
 		{
 			if (!type->IsBuiltIn())
 				types[type->Name()] = magic_enum::enum_name(type->Type());
@@ -544,7 +544,7 @@ json Database::SaveSchema() const
 
 	{
 		auto& types = result["typedesc"] = json::object();
-		for (auto& type : mSchema.Definitions)
+		for (auto type : mSchema.Definitions())
 		{
 			if (!type->IsBuiltIn())
 				types[type->Name()] = type->ToJSON();
@@ -562,7 +562,7 @@ void Database::LoadSchema(json const& from)
 	if (!(version == 1))
 		throw std::runtime_error("invalid schema version number");
 
-	std::erase_if(mSchema.Definitions, [](auto& type) { return !type->IsBuiltIn(); });
+	std::erase_if(mSchema.mDefinitions, [](auto& type) { return !type->IsBuiltIn(); });
 
 	for (auto&& [name, type] : schema.at("types").get_ref<json::object_t const&>())
 	{

@@ -21,7 +21,7 @@ string JSONSchemaFormat::Export(Database const& db)
 	result["version"] = 1;
 	{
 		auto& types = result["types"] = json::object();
-		for (auto& type : db.Definitions())
+		for (auto type : db.Definitions())
 		{
 			if (!type->IsBuiltIn())
 				types[type->Name()] = magic_enum::enum_name(type->Type());
@@ -30,7 +30,7 @@ string JSONSchemaFormat::Export(Database const& db)
 
 	{
 		auto& types = result["typedesc"] = json::object();
-		for (auto& type : db.Definitions())
+		for (auto type : db.Definitions())
 		{
 			if (!type->IsBuiltIn())
 				types[type->Name()] = type->ToJSON();
@@ -169,7 +169,7 @@ string CppDeclarationFormat::Export(Database const& db)
 	if (!db.Namespace.empty())
 		out.WriteStart("namespace {} {{", db.Namespace);
 
-	for (auto& def : db.Definitions())
+	for (auto def : db.Definitions())
 	{
 		switch (def->Type())
 		{
@@ -183,13 +183,13 @@ string CppDeclarationFormat::Export(Database const& db)
 	out.WriteLine("");
 
 	mWrittenTypes.clear();
-	for (auto& def : db.Definitions())
+	for (auto def : db.Definitions())
 	{
 		switch (def->Type())
 		{
-		case DefinitionType::Class: WriteClass(out, db, dynamic_cast<ClassDefinition const*>(def.get())); break;
-		case DefinitionType::Enum: WriteEnum(out, db, dynamic_cast<EnumDefinition const*>(def.get())); break;
-		case DefinitionType::Struct: WriteStruct(out, db, dynamic_cast<StructDefinition const*>(def.get())); break;
+		case DefinitionType::Class: WriteClass(out, db, dynamic_cast<ClassDefinition const*>(def)); break;
+		case DefinitionType::Enum: WriteEnum(out, db, dynamic_cast<EnumDefinition const*>(def)); break;
+		case DefinitionType::Struct: WriteStruct(out, db, dynamic_cast<StructDefinition const*>(def)); break;
 		}
 	}
 

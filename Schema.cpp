@@ -1,7 +1,6 @@
 #include "pch.h"
 
 #include "Schema.h"
-#include "Database.h"
 
 RecordDefinition const* TypeDefinition::AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
 
@@ -216,7 +215,7 @@ void FieldDefinition::FromJSON(Schema const& schema, json const& value)
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
 {
-	for (auto& def : Definitions)
+	for (auto& def : mDefinitions)
 		if (def->Name() == name)
 			return def.get();
 	return nullptr;
@@ -224,7 +223,7 @@ TypeDefinition const* Schema::ResolveType(string_view name) const
 
 TypeDefinition* Schema::ResolveType(string_view name)
 {
-	for (auto& def : Definitions)
+	for (auto& def : mDefinitions)
 		if (def->Name() == name)
 			return def.get();
 	return nullptr;
