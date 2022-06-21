@@ -12,7 +12,7 @@ DataStore::DataStore(Database const& db)
 		{ "roots", json::array() },
 		{ "schema", json::object({
 			{ "uri", db.Directory().string() },
-			{ "version", db.Schema().Version() },
+			{ "version", db.Schema().Version() }, /// TODO: These values are not updated when we change the schema in the editor!
 			{ "hash", db.Schema().Hash() }
 		})},
 		{ "fielddata", json::object() }

@@ -149,17 +149,6 @@ vector<FieldDefinition const*> RecordDefinition::AllFieldsOrdered() const
 	return result;
 }
 
-/*
-string RecordDefinition::FreshFieldName() const
-{
-	string candidate = "Field";
-	size_t num = 1;
-	while (OwnOrBaseField(candidate))
-		candidate = format("Field{}", num++);
-	return candidate;
-}
-*/
-
 json RecordDefinition::ToJSON() const
 {
 	json result = TypeDefinition::ToJSON();

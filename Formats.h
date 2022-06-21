@@ -31,8 +31,8 @@ private:
 	set<TypeDefinition const*> mWrittenTypes;
 
 	void WriteClass(SimpleOutputter& out, Database const& db, ClassDefinition const* klass);
-	void WriteEnum(SimpleOutputter& out, Database const& db, EnumDefinition const* klass);
-	void WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* klass);
+	void WriteEnum(SimpleOutputter& out, Database const& db, EnumDefinition const* enoom);
+	void WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* strukt);
 
 	static string FormatTypeName(Database const& db, TypeDefinition const* type);
 	static string FormatTypeReference(Database const& db, TypeReference const& ref);

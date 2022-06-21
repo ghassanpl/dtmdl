@@ -35,4 +35,4 @@ string FreshName(string_view base, FUNC&& func)
 	return candidate;
 }
 
-void CheckError(result<void, string> val);
+void CheckError(result<void, string> val, string else_string = {});

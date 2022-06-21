@@ -2,10 +2,13 @@
 
 enum class DefinitionType
 {
-	BuiltIn,
+	BuiltIn, /// TODO: Maybe name it scalar instead?
 	Enum,
 	Struct,
 	Class,
+
+	/// Union
+	/// Alias
 };
 
 struct TypeDefinition;
@@ -50,7 +53,7 @@ enum class TemplateParameterQualifier
 	Enum,
 	Integral,
 	Floating,
-	Simple,
+	///Scalar, /// Scalar/Simple - wtf does that even mean?!
 
 	Size,
 	Pointer,
@@ -74,8 +77,6 @@ struct TemplateParameter
 	json ToJSON() const { return json::object({ {"name", Name }, {"qualifier", magic_enum::enum_name(Qualifier)}, {"flags", string_ops::join(Flags, ",", [](auto e) { return magic_enum::enum_name(e); })} }); }
 	void FromJSON(json const& value);
 };
-
-result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param);
 
 struct RecordDefinition;
 
@@ -152,8 +153,6 @@ struct RecordDefinition : TypeDefinition
 
 	vector<FieldDefinition const*> AllFieldsOrdered() const;
 
-	//string FreshFieldName() const;
-
 	virtual json ToJSON() const override;
 	virtual void FromJSON(Schema const& schema, json const& value) override;
 
@@ -220,7 +219,7 @@ protected:
 
 	friend struct Database;
 
-	BuiltinDefinition(string name, string native, vector<TemplateParameter> template_params = {}, bool markable = false)
+	BuiltinDefinition(string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
 		: TypeDefinition(move(name), {}), mNativeEquivalent(move(native)), mMarkable(markable)
 	{
 		mTemplateParameters = move(template_params);
@@ -234,7 +233,6 @@ protected:
 
 struct Schema
 {
-	//map<string, unique_ptr<TypeDefinition>, less<>> Definitions;
 	vector<unique_ptr<TypeDefinition>> Definitions;
 
 	TypeDefinition const* ResolveType(string_view name) const;

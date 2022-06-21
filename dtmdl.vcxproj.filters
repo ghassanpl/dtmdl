@@ -48,6 +48,9 @@
     <ClCompile Include="Values.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Validation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />
@@ -78,6 +81,9 @@
       <Filter>Source Files\External</Filter>
     </ClInclude>
     <ClInclude Include="Values.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Validation.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

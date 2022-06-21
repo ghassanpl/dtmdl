@@ -4,6 +4,30 @@
 #include "Formats.h"
 #include "DataStore.h"
 
+struct TypeUsedInFieldType
+{
+	FieldDefinition* Field;
+	vector<vector<size_t>> References;
+};
+
+struct TypeIsBaseTypeOf
+{
+	RecordDefinition const* ChildType;
+};
+
+struct TypeHasDataInDataStore
+{
+	string StoreName;
+};
+
+using TypeUsage = std::variant<TypeUsedInFieldType, TypeIsBaseTypeOf, TypeHasDataInDataStore>;
+
+string Describe(TypeUsedInFieldType const& usage);
+string Describe(TypeIsBaseTypeOf const& usage);
+string Describe(TypeHasDataInDataStore const& usage);
+inline
+string Describe(TypeUsage const& usage) { return visit([](auto const& usage) { return Describe(usage); }, usage); }
+
 struct Database
 {
 	using Def = TypeDefinition const*;
@@ -26,31 +50,7 @@ struct Database
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
 	result<void, string> ValidateFieldType(Fld def, TypeReference const& type);
 
-	struct TypeUsedInFieldType
-	{
-		FieldDefinition* Field;
-		//vector<TypeReference*> References;
-		vector<vector<size_t>> References;
-	};
-
-	struct TypeIsBaseTypeOf
-	{
-		RecordDefinition const* ChildType;
-	};
-
-	struct TypeHasDataInDataStore
-	{
-		string StoreName;
-	};
-
-	using TypeUsage = std::variant<TypeUsedInFieldType, TypeIsBaseTypeOf, TypeHasDataInDataStore>;
-
-	string Stringify(TypeUsedInFieldType const& usage);
-	string Stringify(TypeIsBaseTypeOf const& usage);
-	string Stringify(TypeHasDataInDataStore const& usage);
-	string Stringify(TypeUsage const& usage) { return visit([this](auto const& usage) { return Stringify(usage); }, usage); }
-
-	vector<TypeUsage> ValidateDeleteType(Def type);
+	vector<TypeUsage> LocateTypeUsages(Def type) const;
 
 	vector<string> StoresWithFieldData(Fld field) const;
 
@@ -79,8 +79,7 @@ struct Database
 	result<void, string> DeleteField(Fld def);
 	result<void, string> DeleteType(Def type);
 
-	bool IsParent(Def parent, Def potential_child);
-
+	/// Database Operations
 	Database(filesystem::path dir);
 
 	void SaveAll();
@@ -88,11 +87,15 @@ struct Database
 	result<void, string> CreateBackup();
 	result<void, string> CreateBackup(filesystem::path in_directory);
 
+	/// Accessors and Queries
+
 	auto const& Directory() const noexcept { return mDirectory; }
 	auto const& Schema() const noexcept { return mSchema; }
 	auto& DataStores() noexcept { return mDataStores; }
 
 	auto VoidType() const noexcept { return mVoid; }
+
+	static bool IsParent(Def parent, Def potential_child);
 
 	string Namespace;
 
@@ -118,12 +121,12 @@ private:
 		return result;
 	}
 
-	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params = {}, bool markable = false);
+	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers);
 
 	BuiltinDefinition const* mVoid = nullptr;
 
 	::Schema mSchema;
 	map<string, DataStore, less<>> mDataStores;
 
-	void UpdateDataStore(function<void(DataStore&)> update_func);
+	void UpdateDataStores(function<void(DataStore&)> update_func);
 };

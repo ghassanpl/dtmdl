@@ -9,16 +9,11 @@
 
 #include "Database.h"
 #include "Values.h"
+#include "Validation.h"
 
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
 
 using FilterFunc = std::function<bool(TypeDefinition const*)>;
-
-FilterFunc fltAnyStruct = [](TypeDefinition const* def) { return def && def->IsStruct(); };
-FilterFunc fltAnyClass = [](TypeDefinition const* def) { return def && def->IsClass(); };
-FilterFunc fltAnyRecord = [](TypeDefinition const* def) { return def && def->IsRecord(); };
-FilterFunc fltAnyEnum = [](TypeDefinition const* def) { return def && def->IsEnum(); };
-FilterFunc fltAny = [](TypeDefinition const* def) { return def; };
 
 struct IModal
 {
@@ -30,24 +25,39 @@ struct IModal
 	bool Close = false;
 };
 
+/// TODO: Icons for Error and Success modals
 struct ErrorModal : IModal
 {
-	string Message;
-
-	ErrorModal(string msg)
-		: Message(move(msg))
-	{
-
-	}
-
+	variant<string,function<void()>> Message;
+	ErrorModal(variant<string, function<void()>> msg) : Message(move(msg)) {  }
 	virtual void Do() override
 	{
-		ImGui::Text("%s", Message.c_str());
+		if (auto str = get_if<string>(&Message))
+			ImGui::Text("%s", str->c_str());
+		else
+			get<1>(Message)();
 		ImGui::Spacing();
 		if (ImGui::Button("OK"))
 			Close = true;
 	}
 	virtual string WindowName() const override { return "Error"; }
+};
+
+struct SuccessModal : IModal
+{
+	variant<string, function<void()>> Message;
+	SuccessModal(variant<string, function<void()>> msg) : Message(move(msg)) {  }
+	virtual void Do() override
+	{
+		if (auto str = get_if<string>(&Message))
+			ImGui::Text("%s", str->c_str());
+		else
+			get<1>(Message)();
+		ImGui::Spacing();
+		if (ImGui::Button("OK"))
+			Close = true;
+	}
+	virtual string WindowName() const override { return "Success"; }
 };
 
 vector<unique_ptr<IModal>> Modals;
@@ -261,10 +271,12 @@ bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 	);
 }
 
-void CheckError(result<void, string> val)
+void CheckError(result<void, string> val, string else_string)
 {
 	if (val.has_error())
 		OpenModal<ErrorModal>(val.error());
+	else if (!else_string.empty())
+		OpenModal<SuccessModal>(move(else_string));
 }
 
 vector<function<void()>> LateExec;
@@ -301,7 +313,7 @@ TypeReference* GetTypeRef(TypeReference& ref, span<size_t const> s)
 	return GetTypeRef(get<TypeReference>(ref.TemplateArguments[s[0]]), s.subspan(1));
 }
 
-TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& usage)
+TypeReference Change(Database const& db, TypeUsedInFieldType const& usage)
 {
 	TypeReference old_type = usage.Field->FieldType;
 	for (auto& ref : usage.References)
@@ -312,7 +324,7 @@ TypeReference Change(Database const& db, Database::TypeUsedInFieldType const& us
 	return old_type;
 }
 
-void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeUsedInFieldType const& usage)
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, TypeUsedInFieldType const& usage)
 {
 	using namespace ImGui;
 
@@ -342,7 +354,7 @@ void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, 
 	}
 }
 
-result<void, string> ApplyChangeOption(Database& db, Database::TypeUsedInFieldType const& usage, pair<int, std::any>& settings)
+result<void, string> ApplyChangeOption(Database& db, TypeUsedInFieldType const& usage, pair<int, std::any>& settings)
 {
 	switch (settings.first)
 	{
@@ -354,7 +366,7 @@ result<void, string> ApplyChangeOption(Database& db, Database::TypeUsedInFieldTy
 	throw runtime_error("invalid change option");
 }
 
-void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeIsBaseTypeOf const& usage)
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, TypeIsBaseTypeOf const& usage)
 {
 	using namespace ImGui;
 	vector<string> options = { 
@@ -371,7 +383,7 @@ void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, 
 	Checkbox(move_txt.c_str(), &std::any_cast<bool&>(settings.second));
 }
 
-result<void, string> ApplyChangeOption(Database& db, Database::TypeIsBaseTypeOf const& usage, pair<int, std::any>& settings)
+result<void, string> ApplyChangeOption(Database& db, TypeIsBaseTypeOf const& usage, pair<int, std::any>& settings)
 {
 	switch (settings.first)
 	{
@@ -389,14 +401,14 @@ result<void, string> ApplyChangeOption(Database& db, Database::TypeIsBaseTypeOf 
 	throw runtime_error("invalid change option");
 }
 
-void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, Database::TypeHasDataInDataStore const& usage)
+void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, TypeHasDataInDataStore const& usage)
 {
 	settings.first = 0;
 	ImGui::Text("NOTE: All data of this type will be deleted");
 	/// TODO: Option to perform a data export of just this type
 }
 
-result<void, string> ApplyChangeOption(Database& db, Database::TypeHasDataInDataStore const& usage, pair<int, std::any>& settings)
+result<void, string> ApplyChangeOption(Database& db, TypeHasDataInDataStore const& usage, pair<int, std::any>& settings)
 {
 	/// This will be taken care of by the db deleting the type
 
@@ -459,11 +471,11 @@ struct DeleteTypeModal : IModal
 {
 	Database& mDB;
 	RecordDefinition* mRecord;
-	vector<Database::TypeUsage> mUsages;
+	vector<TypeUsage> mUsages;
 	vector<pair<int, std::any>> mSettings;
 	bool mMakeBackup = true;
 
-	DeleteTypeModal(Database& db, RecordDefinition* def, vector<Database::TypeUsage> usages)
+	DeleteTypeModal(Database& db, RecordDefinition* def, vector<TypeUsage> usages)
 		: mDB(db)
 		, mRecord(def)
 		, mUsages(move(usages))
@@ -485,7 +497,7 @@ struct DeleteTypeModal : IModal
 		{
 			visit([&](auto& usage) {
 				PushID(&usage);
-				auto usage_text = mDB.Stringify(usage);
+				auto usage_text = Describe(usage);
 				BulletText("%s", usage_text.c_str());
 				Indent();
 				ShowUsageHandleUI(mDB, mRecord, mSettings[i], usage);
@@ -570,7 +582,7 @@ void EditRecord(Database& db, RecordDefinition* def, bool is_struct)
 		Text("Are you sure you want to delete this type?");
 		if (Button("Yes"))
 		{
-			auto usages = db.ValidateDeleteType(def);
+			auto usages = db.LocateTypeUsages(def);
 			if (usages.empty())
 				LateExec.push_back([&db, def] { CheckError(db.DeleteType(def)); });
 			else
@@ -832,6 +844,10 @@ void PropertiesTab()
 	LabelText("Directory", "%s", dir.c_str());
 
 	InputText("Namespace", &mCurrentDatabase->Namespace);
+
+	Separator();
+	if (Button("Create Backup"))
+		CheckError(mCurrentDatabase->CreateBackup(), "Backup successfully created");
 }
 
 int main(int, char**)
