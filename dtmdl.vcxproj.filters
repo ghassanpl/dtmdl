@@ -80,9 +80,6 @@
     <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_message_box.h">
       <Filter>Source Files\External</Filter>
     </ClInclude>
-    <ClInclude Include="Values.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="Validation.h">
       <Filter>Source Files</Filter>
     </ClInclude>

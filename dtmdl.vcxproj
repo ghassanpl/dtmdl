@@ -56,7 +56,6 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="Schema.h" />
     <ClInclude Include="Validation.h" />
-    <ClInclude Include="Values.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="TODO.txt" />

@@ -1,3 +1,0 @@
-
-struct DataStore;
-struct TypeReference;
