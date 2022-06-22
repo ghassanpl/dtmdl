@@ -97,7 +97,7 @@ struct TypeDefinition
 	auto const& Name() const noexcept { return mName; }
 	auto const& BaseType() const noexcept { return mBaseType; }
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
-	auto const& Properties() const noexcept { return mProperties; }
+	auto const& Attributes() const noexcept { return mAttributes; }
 
 	virtual json ToJSON() const;
 	virtual void FromJSON(Schema const& schema, json const& value);
@@ -111,7 +111,7 @@ protected:
 	string mName;
 	TypeReference mBaseType{};
 	vector<TemplateParameter> mTemplateParameters{};
-	json mProperties;
+	json mAttributes;
 
 	TypeDefinition(string name)
 		: mName(move(name))
@@ -131,13 +131,12 @@ struct FieldDefinition
 	RecordDefinition const* ParentRecord = nullptr;
 	string Name;
 	TypeReference FieldType{};
-	json InitialValue;
-	json Properties;
+	json Attributes;
 	
-	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"initial", InitialValue}, {"properties", Properties} }); }
+	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"attributes", Attributes} }); }
 	void FromJSON(Schema const& schema, json const& value);
 
-	string ToString() const { return format("var {} : {} = {}; /// {}", Name, FieldType.ToString(), InitialValue.dump(), Properties.dump()); }
+	string ToString() const { return format("var {} : {}; // {}", Name, FieldType.ToString(), Attributes.dump()); }
 };
 
 struct RecordDefinition : TypeDefinition
@@ -197,12 +196,12 @@ struct EnumeratorDefinition
 	string Name;
 	int64_t Value{};
 	string DescriptiveName;
-	json Properties;
+	json Attributes;
 
-	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"properties", Properties}}); }
+	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"attributes", Attributes}}); }
 	void FromJSON(Schema const& schema, json const& value);
 
-	string ToString() const { return format("{} = {}; /// {} /// {}", Name, Value, DescriptiveName, Properties.dump()); }
+	string ToString() const { return format("{} = {}; /// {} /// {}", Name, Value, DescriptiveName, Attributes.dump()); }
 };
 
 struct EnumDefinition : TypeDefinition

@@ -228,17 +228,17 @@ void DataStore::Do(TypeReference const& type, json& value, FUNC&& func)
 	}
 }
 
-void DataStore::ViewValue(TypeReference const& type, json& value, json const& field_properties)
+void DataStore::ViewValue(TypeReference const& type, json& value, json const& field_attributes)
 {
-	//Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) { handlers.ViewFunc(*this, type, value, field_properties); });
+	//Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) { handlers.ViewFunc(*this, type, value, field_attributes); });
 }
 
-bool DataStore::EditValue(TypeReference const& type, json& value, json const& field_properties, json::json_pointer value_path)
+bool DataStore::EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path)
 {
 	/*
 	Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) {
-		//handlers.ViewFunc(*this, type, value, field_properties);
-		handlers.EditorFunc(*this, type, value, field_properties); 
+		//handlers.ViewFunc(*this, type, value, field_attributes);
+		handlers.EditorFunc(*this, type, value, field_attributes); 
 	});
 	*/
 	if (!type)
@@ -250,7 +250,7 @@ bool DataStore::EditValue(TypeReference const& type, json& value, json const& fi
 	switch (type.Type->Type())
 	{
 	case DefinitionType::BuiltIn:
-		return mBuiltIns.at(type.Type->Name()).EditorFunc(*this, type, value, field_properties, move(value_path));
+		return mBuiltIns.at(type.Type->Name()).EditorFunc(*this, type, value, field_attributes, move(value_path));
 	case DefinitionType::Enum:
 		break;
 	case DefinitionType::Struct:
@@ -313,26 +313,26 @@ void Text(string_view str, ARGS&&... args)
 	ImGui::Text("%s", f.c_str());
 }
 
-void DataStore::ViewVoid(TypeReference const& type, json const& value, json const& field_properties) { Text("void"); }
-void DataStore::ViewF32(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (float)value); }
-void DataStore::ViewF64(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (double)value); }
-void DataStore::ViewI8(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (int8_t)value); }
-void DataStore::ViewI16(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (int16_t)value); }
-void DataStore::ViewI32(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (int32_t)value); }
-void DataStore::ViewI64(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (int64_t)value); }
-void DataStore::ViewU8(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (uint8_t)value); }
-void DataStore::ViewU16(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (uint16_t)value); }
-void DataStore::ViewU32(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (uint32_t)value); }
-void DataStore::ViewU64(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (uint64_t)value); }
-void DataStore::ViewBool(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (bool)value); }
-void DataStore::ViewString(TypeReference const& type, json const& value, json const& field_properties) { Text("{}", (string_view)value); }
-void DataStore::ViewBytes(TypeReference const& type, json const& value, json const& field_properties) { Text("<bytes>"); }
-void DataStore::ViewFlags(TypeReference const& type, json const& value, json const& field_properties) { Text("<flags>"); }
-void DataStore::ViewList(TypeReference const& type, json const& value, json const& field_properties) { Text("<list>"); }
-void DataStore::ViewArray(TypeReference const& type, json const& value, json const& field_properties) { Text("<array>"); }
-void DataStore::ViewRef(TypeReference const& type, json const& value, json const& field_properties) { Text("<ref>"); }
-void DataStore::ViewOwn(TypeReference const& type, json const& value, json const& field_properties) { Text("<own>"); }
-void DataStore::ViewVariant(TypeReference const& type, json const& value, json const& field_properties) { Text("<variant>"); }
+void DataStore::ViewVoid(TypeReference const& type, json const& value, json const& field_attributes) { Text("void"); }
+void DataStore::ViewF32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (float)value); }
+void DataStore::ViewF64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (double)value); }
+void DataStore::ViewI8(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int8_t)value); }
+void DataStore::ViewI16(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int16_t)value); }
+void DataStore::ViewI32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int32_t)value); }
+void DataStore::ViewI64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int64_t)value); }
+void DataStore::ViewU8(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint8_t)value); }
+void DataStore::ViewU16(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint16_t)value); }
+void DataStore::ViewU32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint32_t)value); }
+void DataStore::ViewU64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint64_t)value); }
+void DataStore::ViewBool(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (bool)value); }
+void DataStore::ViewString(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (string_view)value); }
+void DataStore::ViewBytes(TypeReference const& type, json const& value, json const& field_attributes) { Text("<bytes>"); }
+void DataStore::ViewFlags(TypeReference const& type, json const& value, json const& field_attributes) { Text("<flags>"); }
+void DataStore::ViewList(TypeReference const& type, json const& value, json const& field_attributes) { Text("<list>"); }
+void DataStore::ViewArray(TypeReference const& type, json const& value, json const& field_attributes) { Text("<array>"); }
+void DataStore::ViewRef(TypeReference const& type, json const& value, json const& field_attributes) { Text("<ref>"); }
+void DataStore::ViewOwn(TypeReference const& type, json const& value, json const& field_attributes) { Text("<own>"); }
+void DataStore::ViewVariant(TypeReference const& type, json const& value, json const& field_attributes) { Text("<variant>"); }
 
 using namespace ImGui;
 
@@ -344,7 +344,7 @@ void DataStore::LogDataChange(json::json_pointer const& value_path, json const& 
 		cout << format("Data store '{}': '{}' changed from '{}' to '{}'\n", "...", value_path.to_string(), from.dump(), value.dump());
 }
 
-bool DataStore::EditVoid(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditVoid(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	if (!value.is_null())
 	{
@@ -364,7 +364,7 @@ bool DataStore::EditVoid(TypeReference const& type, json& value, json const& fie
 }
 
 template <typename JSON_TYPE, typename FUNC>
-bool DataStore::EditScalar(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path, FUNC&& func)
+bool DataStore::EditScalar(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path, FUNC&& func)
 {
 	bool edited = false;
 	json previous_val{};
@@ -373,7 +373,7 @@ bool DataStore::EditScalar(TypeReference const& type, json& value, json const& f
 	PushID(&value);
 	if (auto ptr = value.get_ptr<JSON_TYPE*>())
 	{
-		edited = func(type, *ptr, field_properties, value_path);
+		edited = func(type, *ptr, field_attributes, value_path);
 	}
 	else
 	{
@@ -395,10 +395,10 @@ bool DataStore::EditScalar(TypeReference const& type, json& value, json const& f
 	return edited;
 }
 
-#define EDIT(json_type) EditScalar<json::json_type>(type, value, field_properties, value_path, [](TypeReference const& type, json::json_type& value, json const& field_properties, json::json_pointer const& value_path) {
+#define EDIT(json_type) EditScalar<json::json_type>(type, value, field_attributes, value_path, [](TypeReference const& type, json::json_type& value, json const& field_attributes, json::json_pointer const& value_path) {
 #define EDITEND() }); return false;
 
-bool DataStore::EditF32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditF32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_float_t)
 		InputDouble("", &value, 0, 0, "%g");
@@ -406,7 +406,7 @@ bool DataStore::EditF32(TypeReference const& type, json& value, json const& fiel
 	EDITEND()
 }
 
-bool DataStore::EditF64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditF64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_float_t)
 		InputDouble("", &value, 0, 0, "%g");
@@ -414,7 +414,7 @@ bool DataStore::EditF64(TypeReference const& type, json& value, json const& fiel
 	EDITEND()
 }
 
-bool DataStore::EditI8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditI8(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 { 
 	EDIT(number_integer_t)
 		static constexpr json::number_integer_t min = std::numeric_limits<int8_t>::lowest();
@@ -424,7 +424,7 @@ bool DataStore::EditI8(TypeReference const& type, json& value, json const& field
 	EDITEND()
 }
 
-bool DataStore::EditI16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditI16(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_integer_t)
 		static constexpr json::number_integer_t min = std::numeric_limits<int16_t>::lowest();
@@ -433,7 +433,7 @@ bool DataStore::EditI16(TypeReference const& type, json& value, json const& fiel
 		return IsItemDeactivatedAfterEdit();
 	EDITEND()
 }
-bool DataStore::EditI32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditI32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_integer_t)
 		static constexpr json::number_integer_t min = std::numeric_limits<int32_t>::lowest();
@@ -442,7 +442,7 @@ bool DataStore::EditI32(TypeReference const& type, json& value, json const& fiel
 		return IsItemDeactivatedAfterEdit();
 	EDITEND()
 }
-bool DataStore::EditI64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditI64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_integer_t)
 		DragScalar("", ImGuiDataType_S64, &value);
@@ -450,7 +450,7 @@ bool DataStore::EditI64(TypeReference const& type, json& value, json const& fiel
 	EDITEND()
 }
 
-bool DataStore::EditU8(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditU8(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_unsigned_t)
 		static constexpr json::number_unsigned_t min = std::numeric_limits<uint8_t>::lowest();
@@ -460,7 +460,7 @@ bool DataStore::EditU8(TypeReference const& type, json& value, json const& field
 	EDITEND()
 }
 
-bool DataStore::EditU16(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditU16(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_unsigned_t)
 		static constexpr json::number_unsigned_t min = std::numeric_limits<uint16_t>::lowest();
@@ -469,7 +469,7 @@ bool DataStore::EditU16(TypeReference const& type, json& value, json const& fiel
 		return IsItemDeactivatedAfterEdit();
 	EDITEND()
 }
-bool DataStore::EditU32(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditU32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_unsigned_t)
 		static constexpr json::number_unsigned_t min = std::numeric_limits<uint32_t>::lowest();
@@ -478,7 +478,7 @@ bool DataStore::EditU32(TypeReference const& type, json& value, json const& fiel
 		return IsItemDeactivatedAfterEdit();
 	EDITEND()
 }
-bool DataStore::EditU64(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditU64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(number_unsigned_t)
 		DragScalar("", ImGuiDataType_U64, &value);
@@ -486,14 +486,14 @@ bool DataStore::EditU64(TypeReference const& type, json& value, json const& fiel
 	EDITEND()
 }
 
-bool DataStore::EditBool(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditBool(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(boolean_t)
 		return Checkbox("Value", &value);
 	EDITEND()
 }
 
-bool DataStore::EditString(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditString(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(string_t)
 		InputText("", &value);
@@ -501,7 +501,7 @@ bool DataStore::EditString(TypeReference const& type, json& value, json const& f
 	EDITEND()
 }
 
-bool DataStore::EditList(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path)
+bool DataStore::EditList(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
 {
 	EDIT(array_t)
 
@@ -510,9 +510,9 @@ bool DataStore::EditList(TypeReference const& type, json& value, json const& fie
 	EDITEND()
 }
 
-bool DataStore::EditBytes(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditFlags(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditArray(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_properties, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditBytes(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditFlags(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditArray(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }

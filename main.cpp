@@ -469,14 +469,14 @@ struct DeleteFieldModal : IModal
 struct DeleteTypeModal : IModal
 {
 	Database& mDB;
-	RecordDefinition const* mRecord;
+	TypeDefinition const* mType;
 	vector<TypeUsage> mUsages;
 	vector<pair<int, std::any>> mSettings;
 	bool mMakeBackup = true;
 
-	DeleteTypeModal(Database& db, RecordDefinition const* def, vector<TypeUsage> usages)
+	DeleteTypeModal(Database& db, TypeDefinition const* def, vector<TypeUsage> usages)
 		: mDB(db)
-		, mRecord(def)
+		, mType(def)
 		, mUsages(move(usages))
 		, mSettings(mUsages.size(), { -1, {} })
 	{
@@ -487,7 +487,7 @@ struct DeleteTypeModal : IModal
 	{
 		using namespace ImGui;
 
-		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mRecord->Name(), mUsages.size());
+		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mType->Name(), mUsages.size());
 
 		Text("%s", text.c_str());
 
@@ -499,7 +499,7 @@ struct DeleteTypeModal : IModal
 				auto usage_text = Describe(usage);
 				BulletText("%s", usage_text.c_str());
 				Indent();
-				ShowUsageHandleUI(mDB, mRecord, mSettings[i], usage);
+				ShowUsageHandleUI(mDB, mType, mSettings[i], usage);
 				Unindent();
 				PopID();
 				}, usage);
@@ -539,7 +539,7 @@ struct DeleteTypeModal : IModal
 				}
 				if (issues.empty())
 				{
-					auto result = mDB.DeleteType(mRecord);
+					auto result = mDB.DeleteType(mType);
 					if (result.has_error())
 						OpenModal<ErrorModal>(format("Type not deleted:\n\n{}", result.error()));
 				}
@@ -600,12 +600,11 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 
 	DoDeleteTypeUI(db, def);
 
-	if (BeginTable("Fields", 5))
+	if (BeginTable("Fields", 4))
 	{
 		TableSetupColumn("Name");
 		TableSetupColumn("Type");
-		TableSetupColumn("Initial Value");
-		TableSetupColumn("Properties");
+		TableSetupColumn("Attributes");
 		TableSetupColumn("Actions");
 		TableSetupScrollFreeze(0, 1);
 		TableHeadersRow();
@@ -625,9 +624,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				auto type = format("{}", field->FieldType.ToString());
 				TextDisabled("%s", type.c_str());
 				TableNextColumn();
-				Text("Initial Value");
-				TableNextColumn();
-				Text("Properties");
+				Text("Attributes");
 				TableNextColumn();
 				SmallButton("Move to Child");
 			}
@@ -640,9 +637,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				SetNextItemWidth(GetContentRegionAvail().x);
 				FieldTypeEditor(db, field);
 				TableNextColumn();
-				Text("Initial Value");
-				TableNextColumn();
-				Text("Properties");
+				Text("Attributes");
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
@@ -690,6 +685,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 
 void EditEnum(Database& db, EnumDefinition const* enoom)
 {
+	/*
 	using namespace ImGui;
 	Text("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
@@ -711,7 +707,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 		TableSetupColumn("Name");
 		TableSetupColumn("Value");
 		TableSetupColumn("Descriptive Name");
-		TableSetupColumn("Properties");
+		TableSetupColumn("Attributes");
 		TableSetupColumn("Actions");
 		TableSetupScrollFreeze(0, 1);
 		TableHeadersRow();
@@ -731,7 +727,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 			TableNextColumn();
 			Text("Initial Value");
 			TableNextColumn();
-			Text("Properties");
+			Text("Attributes");
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
@@ -774,6 +770,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 		EndTable();
 	}
+	*/
 }
 
 Database mDatabase{ "test/db1/" };
@@ -912,6 +909,11 @@ void DataTab()
 	}
 }
 
+void AttributesTab()
+{
+
+}
+
 void InterfacesTab()
 {
 
@@ -1002,6 +1004,11 @@ int main(int, char**)
 			if (ImGui::BeginTabItem("Data"))
 			{
 				DataTab();
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Attributes"))
+			{
+				AttributesTab();
 				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Interfaces"))

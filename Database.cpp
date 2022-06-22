@@ -230,7 +230,7 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 
 	/// Schema Change
 
-	mut(to_record)->mFields.push_back(make_unique<FieldDefinition>(to_record, move(mut(src_field)->Name), src_field->FieldType, move(mut(src_field)->InitialValue)));
+	mut(to_record)->mFields.push_back(make_unique<FieldDefinition>(to_record, move(mut(src_field)->Name), src_field->FieldType));
 	auto it = ranges::find_if(from_record->mFields, [src_field](auto const& f) { return f.get() == src_field; });
 	mut(from_record)->mFields.erase(it);
 

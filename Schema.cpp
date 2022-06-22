@@ -210,8 +210,7 @@ void FieldDefinition::FromJSON(Schema const& schema, json const& value)
 {
 	Name = value.at("name").get_ref<json::string_t const&>();
 	FieldType.FromJSON(schema, value.at("type"));
-	InitialValue = value.at("initial");
-	Properties = get(value, "properties");
+	Attributes = get(value, "attributes");
 }
 
 void EnumeratorDefinition::FromJSON(Schema const& schema, json const& value)
@@ -219,7 +218,7 @@ void EnumeratorDefinition::FromJSON(Schema const& schema, json const& value)
 	Name = value.at("name").get_ref<json::string_t const&>();
 	Value = value.at("value");
 	DescriptiveName = value.at("descriptive").get_ref<json::string_t const&>();
-	Properties = get(value, "properties");
+	Attributes = get(value, "attributes");
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
