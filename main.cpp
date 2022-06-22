@@ -830,6 +830,7 @@ void TypesTab()
 
 void DataTab()
 {
+	/*
 	using namespace ImGui;
 	if (BeginTabBar("Data Stores"))
 	{
@@ -907,6 +908,7 @@ void DataTab()
 		}
 		EndTabBar();
 	}
+	*/
 }
 
 void AttributesTab()

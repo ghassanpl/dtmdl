@@ -4,7 +4,9 @@
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
+#include "Values.h"
 
+/*
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
 struct concat<tuple<Ts...>, tuple<Us...>>
@@ -235,12 +237,6 @@ void DataStore::ViewValue(TypeReference const& type, json& value, json const& fi
 
 bool DataStore::EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path)
 {
-	/*
-	Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) {
-		//handlers.ViewFunc(*this, type, value, field_attributes);
-		handlers.EditorFunc(*this, type, value, field_attributes); 
-	});
-	*/
 	if (!type)
 	{
 		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
@@ -516,3 +512,32 @@ bool DataStore::EditArray(TypeReference const& type, json& value, json const& fi
 bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
 bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
 bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
+*/
+
+bool ForEveryObjectWithTypeName(Schema const& schema, TypeReference const& type, json& value, string_view type_name, function<bool(json&)> const& object_func)
+{
+	VisitorFunc visitor = [type_name, object_func = move(object_func), &visitor](Schema const& schema, TypeReference const& child_type, json::json_pointer index, json& child_value) {
+		if (child_type->Name() == type_name)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(schema, child_type, child_value, visitor);
+	};
+
+	return visitor(schema, type, json::json_pointer{}, value);
+}
+
+bool ForEveryObjectWithTypeName(Schema const& schema, TypeReference const& type, json const& value, string_view type_name, function<bool(json const&)> const& object_func)
+{
+	ConstVisitorFunc visitor = [type_name, object_func = move(object_func), &visitor](Schema const& schema, TypeReference const& child_type, json::json_pointer index, json const& child_value) {
+		if (child_type->Name() == type_name)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(schema, child_type, child_value, visitor);
+	};
+
+	return visitor(schema, type, json::json_pointer{}, value);
+}

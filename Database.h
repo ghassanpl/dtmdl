@@ -127,6 +127,7 @@ private:
 	BuiltinDefinition const* mVoid = nullptr;
 
 	::Schema mSchema;
+
 	map<string, DataStore, less<>> mDataStores;
 
 	void UpdateDataStores(function<void(DataStore&)> update_func);

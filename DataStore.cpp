@@ -2,7 +2,9 @@
 
 #include "DataStore.h"
 #include "Database.h"
+#include "Values.h"
 
+/*
 DataStore::DataStore(Database const& db)
 	: DB(db)
 {
@@ -111,4 +113,99 @@ bool DataStore::HasValue(string_view name) const
 void DataStore::AddValue(json value)
 {
 	Storage.at("roots").push_back(move(value));
+}
+
+*/
+
+void DataStore::SetTypeName(string_view old_name, string_view new_name)
+{
+	throw 0;
+}
+
+void DataStore::SetFieldName(string_view record, string_view old_name, string_view new_name)
+{
+	this->ForEveryObjectWithTypeName(record, [=](json& record_data) {
+		json old_field_data = move(*record_data.find(old_name));
+		record_data[string{ new_name }] = move(old_field_data);
+		record_data.erase(record_data.find(old_name));
+		return false;
+	});
+}
+
+bool DataStore::HasFieldData(string_view record, string_view name) const
+{
+	return this->ForEveryObjectWithTypeName(record, [=](json const& record_data) {
+		return record_data.find(name) != record_data.end();
+	});
+}
+
+void DataStore::DeleteField(string_view record, string_view name)
+{
+	this->ForEveryObjectWithTypeName(record, [=](json& record_data) {
+		if (auto it = record_data.find(name); it != record_data.end())
+			record_data.erase(it);
+		return false;
+	});
+}
+
+bool DataStore::HasTypeData(string_view type_name) const
+{
+	return this->ForEveryObjectWithTypeName(type_name, [=](json const& record_data) {
+		return true;
+	});
+}
+
+void DataStore::DeleteType(string_view type_name)
+{
+	throw 0;
+}
+
+bool DataStore::HasValue(string_view name) const
+{
+	return mStorage.at("roots").contains(name);
+}
+
+/*
+void DataStore::ForEveryRoot(function<void(string_view name, TypeReference const& type, json& value)> func)
+{
+	for (auto&& item : mStorage.at("roots").items())
+	{
+		string current_name = item.key();
+		TypeReference current_type{ mDB.Schema(), item.value().at("type")};
+		json& current_value = item.value().at("value");
+
+		if (func(current_name, current_type, current_value))
+		{
+			item.at("name") = current_name;
+			item.at("type") = current_type.ToJSON();
+		}
+	}
+}
+*/
+
+bool DataStore::ForEveryObjectWithTypeName(string_view type_name, function<bool(json&)> const& object_func)
+{
+	for (auto&& item : mStorage.at("roots").items())
+	{
+		//string current_name = item.at("name");
+		TypeReference current_type{ mDB.Schema(), item.value().at("type") };
+		json& current_value = item.value().at("value");
+
+		if (::ForEveryObjectWithTypeName(mDB.Schema(), current_type, current_value, type_name, object_func))
+			return true;
+	}
+	return false;
+}
+
+bool DataStore::ForEveryObjectWithTypeName(string_view type_name, function<bool(json const&)> const& object_func) const
+{
+	for (auto&& item : mStorage.at("roots").items())
+	{
+		TypeReference current_type{ mDB.Schema(), item.value().at("type") };
+		json const& current_value = item.value().at("value");
+
+		if (::ForEveryObjectWithTypeName(mDB.Schema(), current_type, current_value, type_name, object_func))
+			return true;
+	}
+	return false;
 }

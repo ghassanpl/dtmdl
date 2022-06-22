@@ -31,10 +31,8 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 	if (!result)
 		return result;
 
-	/// DataStore update
-	UpdateDataStores([name = result->Name()](DataStore& store) {
-		store.AddNewStruct(name);
-	});
+	/// DataStore update (v2)
+	/// Adding a new struct should not change the data stores
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewStruct"}, {"name", result->Name()} });
@@ -54,12 +52,8 @@ result<EnumDefinition const*, string> Database::AddNewEnum()
 	if (!result)
 		return result;
 
-	/// DataStore update
-	/*
-	UpdateDataStores([name = result->Name()](DataStore& store) {
-		store.AddNewEnum(name);
-	});
-	*/
+	/// DataStore update (v2)
+	/// Adding a new type should not change the data stores
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewEnum"}, {"name", result->Name()} });
@@ -79,9 +73,8 @@ result<void, string> Database::AddNewField(Rec def)
 	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name, TypeReference{ mVoid }));
 
 	/// DataStore update
-	UpdateDataStores([record_name = def->Name(), &name](DataStore& store) {
-		store.AddNewField(record_name, name);
-	});
+	/// Adding a new field to a type should not change the data stores - we treat
+	/// a non-existent object entry as the "default value" for that field
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewField"}, {"record", def->Name()}, {"fieldname", name} });
@@ -213,6 +206,9 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 	if (!from_record || !to_record)
 		throw invalid_argument("both records must be non-null");
 
+	if (!IsParent(from_record, to_record))
+		return failure(format("record '{}' must a base type of record '{}'", from_record->Name(), to_record->Name()));
+
 	if (to_record->OwnField(field_name))
 		return failure(format("record '{}' already has field '{}'", to_record->Name(), field_name));
 	
@@ -221,12 +217,16 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 		return failure(format("record '{}' does not have field '{}'", from_record->Name(), field_name));
 
 	/// DataStore update
+	/// Since a record holds the values for all fields (including parent fields)
+	/// moving a field should only be a destructive data operation if the types are not related
+	/*
 	UpdateDataStores([from_record, to_record, field_name](DataStore& store) {
 		/// 1. Assure that the destination record has the proper field entries (DO NOT CHANGE THEM!)
 		store.EnsureField(to_record->Name(), field_name);
 		/// 2. Remove field entry from source record
 		store.DeleteField(from_record->Name(), field_name);
 	});
+	*/
 
 	/// Schema Change
 
@@ -275,7 +275,10 @@ result<void, string> Database::DeleteField(Fld def)
 	AddChangeLog(json{ {"action", "DeleteField"},  {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"backup", def->ToJSON() } });
 
 	/// DataStore update
-	UpdateDataStores([def](DataStore& store) {
+	/// Need to update data stores - if we delete a field and create a new one with the same name, that
+	/// will be an issue
+
+	UpdateDataStores([&](DataStore& store) {
 		store.DeleteField(def->ParentRecord->Name(), def->Name);
 	});
 
@@ -517,7 +520,7 @@ void Database::SaveAll()
 
 	for (auto& [name, store] : mDataStores)
 	{
-		save_ubjson_file(mDirectory / format("{}.datastore", name), store.Storage);
+		save_ubjson_file(mDirectory / format("{}.datastore", name), store.Storage());
 	}
 
 	mChangeLog.flush();

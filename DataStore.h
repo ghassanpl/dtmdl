@@ -5,6 +5,42 @@ struct TypeReference;
 
 struct DataStore
 {
+	DataStore(Database const& db) : mDB(db) {}
+	DataStore(Database const& db, json storage) : mDB(db), mStorage(move(storage)) {}
+
+	auto const& Storage() const noexcept { return mStorage; }
+
+	void SetTypeName(string_view old_name, string_view new_name);
+	void SetFieldName(string_view record, string_view old_name, string_view new_name);
+
+	bool HasFieldData(string_view record, string_view name) const;
+	void DeleteField(string_view record, string_view name);
+
+	bool HasTypeData(string_view type_name) const;
+	void DeleteType(string_view type_name);
+
+	bool HasValue(string_view name) const;
+	//void AddValue(json value);
+
+	void ForEveryRoot(function<bool(string_view, TypeReference const&, json&)>);
+
+private:
+
+	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json&)> const& object_func);
+	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json const&)> const& object_func) const;
+
+	Database const& mDB;
+	json mStorage = json::object({
+		{ "format", "json-simple-v1" },
+		{ "gcheap", json::array() }, 
+		{ "roots", json::object() },
+		{ "schema", "undefined" }
+	});
+};
+
+/*
+struct DataStore
+{
 	Database const& DB;
 	json Storage;
 
@@ -16,9 +52,6 @@ struct DataStore
 	void AddNewStruct(string_view name);
 	void AddNewField(string_view record, string_view field);
 	void EnsureField(string_view record, string_view field);
-
-	void SetTypeName(string_view old_name, string_view new_name);
-	void SetFieldName(string_view record, string_view old_name, string_view new_name);
 
 	bool HasFieldData(string_view record, string_view name) const;
 	void DeleteField(string_view record, string_view name);
@@ -144,3 +177,5 @@ private:
 
 	void LogDataChange(json::json_pointer const& value_path, json const& from, json const& value);
 };
+
+*/
