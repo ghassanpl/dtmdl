@@ -368,11 +368,11 @@ bool DataStore::EditScalar(TypeReference const& type, json& value, json const& f
 {
 	bool edited = false;
 	json previous_val{};
+	if constexpr (log_changes)
+		previous_val = value;
 	PushID(&value);
 	if (auto ptr = value.get_ptr<JSON_TYPE*>())
 	{
-		if constexpr (log_changes)
-			previous_val = value;
 		edited = func(type, *ptr, field_properties, value_path);
 	}
 	else

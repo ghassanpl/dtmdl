@@ -45,6 +45,31 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 	return success();
 }
 
+result<EnumDefinition const*, string> Database::AddNewEnum()
+{
+	/// Validation
+	
+	/// Schema Change
+	auto result = AddType<EnumDefinition>(FreshName("Enum", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
+	if (!result)
+		return result;
+
+	/// DataStore update
+	/*
+	UpdateDataStores([name = result->Name()](DataStore& store) {
+		store.AddNewEnum(name);
+	});
+	*/
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "AddNewEnum"}, {"name", result->Name()} });
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
 result<void, string> Database::AddNewField(Rec def)
 {
 	/// Validation

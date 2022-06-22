@@ -97,6 +97,7 @@ struct TypeDefinition
 	auto const& Name() const noexcept { return mName; }
 	auto const& BaseType() const noexcept { return mBaseType; }
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
+	auto const& Properties() const noexcept { return mProperties; }
 
 	virtual json ToJSON() const;
 	virtual void FromJSON(Schema const& schema, json const& value);
@@ -110,6 +111,7 @@ protected:
 	string mName;
 	TypeReference mBaseType{};
 	vector<TemplateParameter> mTemplateParameters{};
+	json mProperties;
 
 	TypeDefinition(string name)
 		: mName(move(name))
@@ -130,11 +132,12 @@ struct FieldDefinition
 	string Name;
 	TypeReference FieldType{};
 	json InitialValue;
-
-	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"initial", InitialValue} }); }
+	json Properties;
+	
+	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"initial", InitialValue}, {"properties", Properties} }); }
 	void FromJSON(Schema const& schema, json const& value);
 
-	string ToString() const { return format("var {} : {} = {};", Name, FieldType.ToString(), InitialValue.dump()); }
+	string ToString() const { return format("var {} : {} = {}; /// {}", Name, FieldType.ToString(), InitialValue.dump(), Properties.dump()); }
 };
 
 struct RecordDefinition : TypeDefinition
@@ -186,21 +189,37 @@ protected:
 
 };
 
+struct EnumDefinition;
+
+struct EnumeratorDefinition
+{
+	EnumDefinition const* ParentEnum = nullptr;
+	string Name;
+	int64_t Value{};
+	string DescriptiveName;
+	json Properties;
+
+	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"properties", Properties}}); }
+	void FromJSON(Schema const& schema, json const& value);
+
+	string ToString() const { return format("{} = {}; /// {} /// {}", Name, Value, DescriptiveName, Properties.dump()); }
+};
+
 struct EnumDefinition : TypeDefinition
 {
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Enum; }
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
-	virtual json ToJSON() const override
-	{
-		return TypeDefinition::ToJSON();
-	}
-	virtual void FromJSON(Schema const& schema, json const& value) override
-	{
-		TypeDefinition::FromJSON(schema, value);
-	}
+	virtual json ToJSON() const override;
+	virtual void FromJSON(Schema const& schema, json const& value) override;
+
+	auto const& Enumerators() const noexcept { return mEnumerators; }
 
 protected:
+
+	friend struct Database;
+
+	vector<unique_ptr<EnumeratorDefinition>> mEnumerators;
 
 	using TypeDefinition::TypeDefinition;
 };

@@ -57,6 +57,7 @@ struct Database
 	/// Actions
 
 	result<StructDefinition const*, string> AddNewStruct();
+	result<EnumDefinition const*, string> AddNewEnum();
 	result<void, string> AddNewField(Rec def);
 
 	result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);

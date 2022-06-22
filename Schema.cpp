@@ -211,6 +211,15 @@ void FieldDefinition::FromJSON(Schema const& schema, json const& value)
 	Name = value.at("name").get_ref<json::string_t const&>();
 	FieldType.FromJSON(schema, value.at("type"));
 	InitialValue = value.at("initial");
+	Properties = get(value, "properties");
+}
+
+void EnumeratorDefinition::FromJSON(Schema const& schema, json const& value)
+{
+	Name = value.at("name").get_ref<json::string_t const&>();
+	Value = value.at("value");
+	DescriptiveName = value.at("descriptive").get_ref<json::string_t const&>();
+	Properties = get(value, "properties");
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
@@ -227,4 +236,27 @@ TypeDefinition* Schema::ResolveType(string_view name)
 		if (def->Name() == name)
 			return def.get();
 	return nullptr;
+}
+
+json EnumDefinition::ToJSON() const
+{
+	json result = TypeDefinition::ToJSON();
+	auto& fields = result["enumerators"] = json::array();
+	for (auto& enumerator : mEnumerators)
+		fields.push_back(enumerator->ToJSON());
+	return result;
+}
+
+void EnumDefinition::FromJSON(Schema const& schema, json const& value)
+{
+	TypeDefinition::FromJSON(schema, value);
+	mEnumerators.clear();
+	auto& fields = value.at("enumerators").get_ref<json::array_t const&>();
+	for (auto& field : fields)
+	{
+		auto new_field = make_unique<EnumeratorDefinition>();
+		new_field->FromJSON(schema, field);
+		new_field->ParentEnum = this;
+		mEnumerators.push_back(move(new_field));
+	}
 }

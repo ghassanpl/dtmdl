@@ -8,7 +8,6 @@
 #include <any>
 
 #include "Database.h"
-#include "Values.h"
 #include "Validation.h"
 
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
@@ -564,18 +563,9 @@ struct DeleteTypeModal : IModal
 	}
 };
 
-void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
+void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 {
 	using namespace ImGui;
-	Text("Name: "); SameLine(); TypeNameEditor(db, def);
-	Text("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
-
-	if (Button("Add Field"))
-	{
-		ignore = db.AddNewField(def);
-	}
-	SameLine();
-
 	Button("Delete Type");
 	if (BeginPopupContextItem("Are you sure you want to delete this type?", 0))
 	{
@@ -594,6 +584,21 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 			CloseCurrentPopup();
 		EndPopup();
 	}
+}
+
+void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
+{
+	using namespace ImGui;
+	Text("Name: "); SameLine(); TypeNameEditor(db, def);
+	Text("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
+
+	if (Button("Add Field"))
+	{
+		ignore = db.AddNewField(def);
+	}
+	SameLine();
+
+	DoDeleteTypeUI(db, def);
 
 	if (BeginTable("Fields", 5))
 	{
@@ -683,9 +688,92 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 	}
 }
 
-void EditEnum(Database& db, EnumDefinition const* def)
+void EditEnum(Database& db, EnumDefinition const* enoom)
 {
+	using namespace ImGui;
+	Text("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
+	if (Button("Add Enumerator"))
+	{
+		ignore = db.AddNewEnumerator(enoom);
+	}
+	SameLine();
+
+	Button("Sort By Value");
+	SameLine();
+
+	DoDeleteTypeUI(db, enoom);
+
+	/// TODO: PropertyEditor<bool>(enoom, "backcomp", "Try To Ensure Backwards Compatibility");
+
+	if (BeginTable("Enumerators", 5))
+	{
+		TableSetupColumn("Name");
+		TableSetupColumn("Value");
+		TableSetupColumn("Descriptive Name");
+		TableSetupColumn("Properties");
+		TableSetupColumn("Actions");
+		TableSetupScrollFreeze(0, 1);
+		TableHeadersRow();
+
+		TableNextRow();
+		size_t index = 0;
+		for (auto& enumerator : enoom->Enumerators())
+		{
+			PushID(index);
+
+			TableNextColumn();
+			SetNextItemWidth(GetContentRegionAvail().x);
+			FieldNameEditor(db, field);
+			TableNextColumn();
+			SetNextItemWidth(GetContentRegionAvail().x);
+			FieldTypeEditor(db, field);
+			TableNextColumn();
+			Text("Initial Value");
+			TableNextColumn();
+			Text("Properties");
+			TableNextColumn();
+
+			BeginDisabled(index == 0);
+			if (SmallButton("Up"))
+				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
+			EndDisabled();
+			SameLine();
+
+			BeginDisabled(index == def->Fields().size() - 1);
+			if (SmallButton("Down"))
+				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
+			EndDisabled();
+			SameLine();
+
+			SmallButton("Duplicate"); SameLine();
+			SmallButton("Copy"); SameLine();
+			SmallButton("Delete");
+			if (BeginPopupContextItem("Are you sure you want to delete this field?", 0))
+			{
+				Text("Are you sure you want to delete this field?");
+				if (Button("Yes"))
+				{
+					auto usages = db.StoresWithFieldData(field);
+					if (usages.empty())
+						LateExec.push_back([&db, field] { CheckError(db.DeleteField(field)); });
+					else
+						OpenModal<DeleteFieldModal>(db, field, move(usages));
+
+					CloseCurrentPopup();
+				}
+				SameLine();
+				if (Button("No"))
+					CloseCurrentPopup();
+				EndPopup();
+			}
+
+			PopID();
+			index++;
+		}
+
+		EndTable();
+	}
 }
 
 Database mDatabase{ "test/db1/" };
@@ -699,7 +787,9 @@ void TypesTab()
 		ignore = mCurrentDatabase->AddNewStruct();
 	SameLine();
 	Button("Add Class"); SameLine();
-	Button("Add Enum"); SameLine();
+	if (Button("Add Enum"))
+		ignore = mCurrentDatabase->AddNewEnum(); 
+	SameLine();
 	Button("Add Union"); SameLine();
 	Button("Add Alias");
 	
