@@ -1,18 +1,19 @@
 #pragma once
 
-struct Database;
+struct Schema;
 struct TypeReference;
 
 struct DataStore
 {
-	DataStore(Database const& db) : mDB(db) {}
-	DataStore(Database const& db, json storage) : mDB(db), mStorage(move(storage)) {}
+	DataStore(Schema const& schema) : mSchema(schema) {}
+	DataStore(Schema const& schema, json storage) : mSchema(schema), mStorage(move(storage)) {}
 
 	auto const& Storage() const noexcept { return mStorage; }
 
 	void SetTypeName(string_view old_name, string_view new_name);
 	void SetFieldName(string_view record, string_view old_name, string_view new_name);
 
+	void SetFieldType(string_view record, string_view field, TypeReference const& old_type, TypeReference const& new_type);
 	bool HasFieldData(string_view record, string_view name) const;
 	void DeleteField(string_view record, string_view name);
 
@@ -22,86 +23,30 @@ struct DataStore
 	bool HasValue(string_view name) const;
 	//void AddValue(json value);
 
-	void ForEveryRoot(function<bool(string_view, TypeReference const&, json&)>);
+	//void ForEveryRoot(function<bool(string_view, TypeReference const&, json&)>);
 
 private:
 
 	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json&)> const& object_func);
 	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json const&)> const& object_func) const;
 
-	Database const& mDB;
+	Schema const& mSchema;
+
 	json mStorage = json::object({
 		{ "format", "json-simple-v1" },
 		{ "gcheap", json::array() }, 
 		{ "roots", json::object() },
 		{ "schema", "undefined" }
 	});
+
+	/*
+	{ "schema", json::object({
+		{ "uri", db.Directory().string() },
+		{ "version", db.Schema().Version() }, /// TODO: These values are not updated when we change the schema in the editor!
+		{ "hash", db.Schema().Hash() }
+		*/
 };
-
 /*
-struct DataStore
-{
-	Database const& DB;
-	json Storage;
-
-	DataStore(Database const& db);
-	DataStore(Database const& db, json storage);
-
-	/// The functions below assume the schema is correct
-
-	void AddNewStruct(string_view name);
-	void AddNewField(string_view record, string_view field);
-	void EnsureField(string_view record, string_view field);
-
-	bool HasFieldData(string_view record, string_view name) const;
-	void DeleteField(string_view record, string_view name);
-
-	bool HasTypeData(string_view type_name) const;
-	void DeleteType(string_view type_name);
-
-	bool HasValue(string_view name) const;
-	void AddValue(json value);
-
-	decltype(auto) Roots()
-	{
-		return Storage.at("roots");
-	}
-
-	/// ////////////////////////////////////// ///
-
-
-	void ViewValue(TypeReference const& type, json& value, json const& field_attributes);
-	bool EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path);
-
-	enum class ConversionResult
-	{
-		ConversionImpossible,
-		DataPreserved,
-		DataCorrupted,
-		DataLost,
-	};
-
-	ConversionResult ResultOfConversion(json const& value, TypeReference const& from, TypeReference const& to);
-	result<void, string> Convert(json& value, TypeReference const& from, TypeReference const& to);
-	result<void, string> InitializeValue(TypeReference const& type, json& value);
-
-private:
-
-	using EditorFunction = bool(DataStore&, TypeReference const&, json&, json const&, json::json_pointer);
-	using ViewFunction = void(DataStore&, TypeReference const&, json const&, json const&);
-	using ConversionFunction = result<void, string>(DataStore&, json&, TypeReference const&, TypeReference const&);
-	using InitializationFunction = result<void, string>(DataStore&, TypeReference const&, json&);
-
-	struct BuiltinTypeHandler
-	{
-		function<EditorFunction> EditorFunc;
-		function<ViewFunction> ViewFunc;
-		function<InitializationFunction> InitializationFunc;
-		map<string, function<ConversionFunction>, less<>> ConversionFuncs;
-	};
-
-	map<string, BuiltinTypeHandler, less<>> mBuiltIns;
-
 	bool EditVoid(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path);
 	bool EditF32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path);
 	bool EditF64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path);

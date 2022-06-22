@@ -79,10 +79,13 @@ struct TemplateParameter
 };
 
 struct RecordDefinition;
+struct Schema;
 
 struct TypeDefinition
 {
 	virtual ~TypeDefinition() noexcept = default;
+
+	TypeDefinition(Schema const& schema) noexcept : mSchema(schema) {}
 
 	virtual DefinitionType Type() const noexcept = 0;
 
@@ -94,13 +97,14 @@ struct TypeDefinition
 
 	RecordDefinition const* AsRecord() const noexcept;
 
+	auto const& Schema() const noexcept { return mSchema; }
 	auto const& Name() const noexcept { return mName; }
 	auto const& BaseType() const noexcept { return mBaseType; }
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
 	auto const& Attributes() const noexcept { return mAttributes; }
 
 	virtual json ToJSON() const;
-	virtual void FromJSON(Schema const& schema, json const& value);
+	virtual void FromJSON(json const& value);
 
 protected:
 
@@ -108,19 +112,21 @@ protected:
 
 	bool mCompleted = false;
 
+	::Schema const& mSchema;
+
 	string mName;
 	TypeReference mBaseType{};
 	vector<TemplateParameter> mTemplateParameters{};
 	json mAttributes;
 
-	TypeDefinition(string name)
-		: mName(move(name))
+	TypeDefinition(::Schema const& schema, string name)
+		: mSchema(schema), mName(move(name))
 	{
 
 	}
 
-	TypeDefinition(string name, TypeReference base_type)
-		: mName(move(name)), mBaseType(move(base_type))
+	TypeDefinition(::Schema const& schema, string name, TypeReference base_type)
+		: mSchema(schema), mName(move(name)), mBaseType(move(base_type))
 	{
 	}
 
@@ -132,9 +138,12 @@ struct FieldDefinition
 	string Name;
 	TypeReference FieldType{};
 	json Attributes;
+
+	FieldDefinition(RecordDefinition const* parent, string name, TypeReference ref) : ParentRecord(parent), Name(move(name)), FieldType(move(ref)) {}
+	FieldDefinition(RecordDefinition const* parent, json const& def) : ParentRecord(parent) { FromJSON(def); }
 	
 	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"attributes", Attributes} }); }
-	void FromJSON(Schema const& schema, json const& value);
+	void FromJSON(json const& value);
 
 	string ToString() const { return format("var {} : {}; // {}", Name, FieldType.ToString(), Attributes.dump()); }
 };
@@ -156,7 +165,7 @@ struct RecordDefinition : TypeDefinition
 	vector<FieldDefinition const*> AllFieldsOrdered() const;
 
 	virtual json ToJSON() const override;
-	virtual void FromJSON(Schema const& schema, json const& value) override;
+	virtual void FromJSON(json const& value) override;
 
 protected:
 
@@ -198,8 +207,11 @@ struct EnumeratorDefinition
 	string DescriptiveName;
 	json Attributes;
 
+	EnumeratorDefinition(EnumDefinition const* parent);
+	EnumeratorDefinition(EnumDefinition const* parent, json const& def);
+
 	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"attributes", Attributes}}); }
-	void FromJSON(Schema const& schema, json const& value);
+	void FromJSON(json const& value);
 
 	string ToString() const { return format("{} = {}; /// {} /// {}", Name, Value, DescriptiveName, Attributes.dump()); }
 };
@@ -210,7 +222,7 @@ struct EnumDefinition : TypeDefinition
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
 	virtual json ToJSON() const override;
-	virtual void FromJSON(Schema const& schema, json const& value) override;
+	virtual void FromJSON(json const& value) override;
 
 	auto const& Enumerators() const noexcept { return mEnumerators; }
 
@@ -237,8 +249,8 @@ protected:
 
 	friend struct Database;
 
-	BuiltinDefinition(string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
-		: TypeDefinition(move(name), {}), mNativeEquivalent(move(native)), mMarkable(markable)
+	BuiltinDefinition(::Schema const& schema, string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
+		: TypeDefinition(schema, move(name), {}), mNativeEquivalent(move(native)), mMarkable(markable)
 	{
 		mTemplateParameters = move(template_params);
 	}

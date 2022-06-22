@@ -168,10 +168,13 @@ result<void, string> Database::SetFieldType(Fld def, TypeReference const& type)
 	AddChangeLog(json{ {"action", "SetFieldType"}, {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"type", type.ToJSON() }, {"previous", def->FieldType.ToJSON()} });
 
 	/// Schema Change
+	TypeReference old_type = def->FieldType;
 	mut(def)->FieldType = type;
 
 	/// DataStore update
-	/// TODO
+	UpdateDataStores([&](DataStore& store) {
+		store.SetFieldType(def->ParentRecord->Name(), def->Name, old_type, type);
+	});
 
 	/// Save
 	SaveAll();
@@ -219,14 +222,6 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 	/// DataStore update
 	/// Since a record holds the values for all fields (including parent fields)
 	/// moving a field should only be a destructive data operation if the types are not related
-	/*
-	UpdateDataStores([from_record, to_record, field_name](DataStore& store) {
-		/// 1. Assure that the destination record has the proper field entries (DO NOT CHANGE THEM!)
-		store.EnsureField(to_record->Name(), field_name);
-		/// 2. Remove field entry from source record
-		store.DeleteField(from_record->Name(), field_name);
-	});
-	*/
 
 	/// Schema Change
 
@@ -453,7 +448,6 @@ Database::Database(filesystem::path dir)
 	auto own = AddNative("own", "::DataModel::NativeTypes::Own", vector{
 		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
 	}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
-
 	auto variant = AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
 		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
 	}, true, { TemplateParameterQualifier::NotClass });
@@ -461,7 +455,7 @@ Database::Database(filesystem::path dir)
 	AddFormatPlugin(make_unique<JSONSchemaFormat>());
 	AddFormatPlugin(make_unique<CppDeclarationFormat>());
 
-	mDataStores.emplace("main", DataStore(*this));
+	mDataStores.emplace("main", DataStore(mSchema));
 	
 	LoadAll();
 	SaveAll();
@@ -539,7 +533,7 @@ void Database::LoadAll()
 		if (path.extension() == ".datastore")
 		{
 			mDataStores.erase(path.stem().string());
-			mDataStores.insert({ path.stem().string(), DataStore{*this, try_load_ubjson_file(path)} });
+			mDataStores.insert({ path.stem().string(), DataStore{mSchema, try_load_ubjson_file(path)} });
 		}
 	}
 }
@@ -610,7 +604,7 @@ void Database::LoadSchema(json const& from)
 		auto type_def = mSchema.ResolveType(name);
 		if (!type_def)
 			throw std::runtime_error(format("invalid type defined: {}", name));
-		type_def->FromJSON(mSchema, typedesc);
+		type_def->FromJSON(typedesc);
 	}
 }
 

@@ -1,12 +1,11 @@
 #include "pch.h"
 
-#include "Database.h"
-
 #include "imgui.h"
 #include "imgui_stdlib.h"
+
+#include "Database.h"
 #include "Values.h"
 
-/*
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
 struct concat<tuple<Ts...>, tuple<Us...>>
@@ -42,296 +41,7 @@ string name_of(type_identity<uint64_t>) { return "u64"; }
 string name_of(type_identity<bool>) { return "bool"; }
 string name_of(type_identity<string>) { return "string"; }
 
-void DataStore::InitializeHandlers()
-{
-	mBuiltIns = {
-		{ "void", { &DataStore::EditVoid, &DataStore::ViewVoid, &DataStore::InitializeVoid,  } },
-
-		{ "f32", { &DataStore::EditF32, &DataStore::ViewF32, &DataStore::InitializeF32,  } },
-		{ "f64", { &DataStore::EditF64, &DataStore::ViewF64, &DataStore::InitializeF64,  } },
-		{ "i8", { &DataStore::EditI8, &DataStore::ViewI8, &DataStore::InitializeI8,  } },
-		{ "i16", { &DataStore::EditI16, &DataStore::ViewI16, &DataStore::InitializeI16,  } },
-		{ "i32", { &DataStore::EditI32, &DataStore::ViewI32, &DataStore::InitializeI32,  } },
-		{ "i64", { &DataStore::EditI64, &DataStore::ViewI64, &DataStore::InitializeI64,  } },
-		{ "u8", { &DataStore::EditU8, &DataStore::ViewU8, &DataStore::InitializeU8,  } },
-		{ "u16", { &DataStore::EditU16, &DataStore::ViewU16, &DataStore::InitializeU16,  } },
-		{ "u32", { &DataStore::EditU32, &DataStore::ViewU32, &DataStore::InitializeU32,  } },
-		{ "u64", { &DataStore::EditU64, &DataStore::ViewU64, &DataStore::InitializeU64,  } },
-
-		{ "bool", { &DataStore::EditBool, &DataStore::ViewBool, &DataStore::InitializeBool,  } },
-		{ "string", { &DataStore::EditString, &DataStore::ViewString, &DataStore::InitializeString,  } },
-		{ "bytes", { &DataStore::EditBytes, &DataStore::ViewBytes, &DataStore::InitializeBytes,  } },
-		{ "flags", { &DataStore::EditFlags, &DataStore::ViewFlags, &DataStore::InitializeFlags,  } },
-		{ "list", { &DataStore::EditList, &DataStore::ViewList, &DataStore::InitializeList,  } },
-		{ "array", { &DataStore::EditArray, &DataStore::ViewArray, &DataStore::InitializeArray,  } },
-		{ "ref", { &DataStore::EditRef, &DataStore::ViewRef, &DataStore::InitializeRef,  } },
-		{ "own", { &DataStore::EditOwn, &DataStore::ViewOwn, &DataStore::InitializeOwn,  } },
-		{ "variant", { &DataStore::EditVariant, &DataStore::ViewVariant, &DataStore::InitializeVariant,  } },
-	};
-
-	auto AddNumericConversion = [&]<typename A, typename B>(type_identity<pair<A, B>>) {
-		if constexpr (!is_same_v<A, B>)
-		{
-			mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
-				value = (B)(A)value;
-				return success();
-			};
-		}
-	};
-	auto AddConversionForEachPair = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>, auto&& conversion_func) {
-		(conversion_func(type_identity<PAIRS>{}), ...);
-	};
-	auto AddConversionForTypeCrossProduct = [&]<typename... ELEMENTS1, typename... ELEMENTS2>(type_identity<tuple<ELEMENTS1...>>, type_identity<tuple<ELEMENTS2...>>, auto&& conversion_func) {
-		AddConversionForEachPair(type_identity<typename cross_product<tuple<ELEMENTS1...>, tuple<ELEMENTS2...>>::type>{}, conversion_func);
-	};
-	using numeric_type_list = tuple<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
-	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
-	AddConversionForTypeCrossProduct(type_identity<tuple<bool>>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
-	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<bool>>{}, AddNumericConversion);
-
-	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<string>>{}, [&]<typename A, typename B>(type_identity<pair<A, B>>) {
-		mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
-			value = ::std::to_string((A)value);
-			/// TODO: using to_chars would be faster
-			return success();
-		};
-	});
-
-	AddConversionForTypeCrossProduct(type_identity<tuple<string>>{}, type_identity<numeric_type_list>{}, [&]<typename A, typename B>(type_identity<pair<A, B>>) {
-		mBuiltIns.at(name_of(type_identity<A>{})).ConversionFuncs[name_of(type_identity<B>{})] = [](DataStore&, json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
-			auto& strref = value.get_ref<json::string_t const&>();
-			B dest_value{};
-			ignore = from_chars(to_address(begin(strref)), to_address(end(strref)), dest_value);
-			value = dest_value;
-			return success();
-		};
-	});
-
-	/// TODO: Add more conversions:
-	/// string <-> bytes
-	/// bytes <-> list<u8>
-	/// list<T> <-> array<T, N>
-	/// flags<E> <-> u64
-	/// variant<T1, T2, ...> <-> T1/T2/...
-	/// variant<T1, T2, ...> <-> variant<U1, U2, ...> 
-}
-
-bool DataStore::IsVoid(TypeReference const& ref) const
-{
-	return ref.Type == DB.VoidType();
-}
-
-result<void, string> DataStore::InitializeValue(TypeReference const& type, json& value)
-{
-	if (!type)
-		return failure("no type provided");
-
-	switch (type.Type->Type())
-	{
-	case DefinitionType::BuiltIn:
-		return mBuiltIns.at(type.Type->Name()).InitializationFunc(*this, type, value);
-	case DefinitionType::Enum:
-		return failure("TODO: cannot initialize enums");
-	case DefinitionType::Struct:
-		return failure("TODO: cannot initialize structs");
-	case DefinitionType::Class:
-		return failure("TODO: cannot initialize classes");
-	}
-	return failure(format("unknown type type: {}", magic_enum::enum_name(type.Type->Type())));
-}
-
-DataStore::ConversionResult DataStore::ResultOfConversion(json const& value, TypeReference const& from, TypeReference const& to)
-{
-	if (!from) return ConversionResult::ConversionImpossible;
-	if (!to) return ConversionResult::ConversionImpossible;
-
-	if (from == to)
-		return ConversionResult::DataPreserved;
-
-	if (IsVoid(from))
-		return ConversionResult::DataPreserved;
-	if (IsVoid(to))
-		return ConversionResult::DataLost;
-
-	switch (from.Type->Type())
-	{
-	case DefinitionType::BuiltIn:
-	{
-		auto& handler = mBuiltIns.at(from.Type->Name());
-		if (auto it = handler.ConversionFuncs.find(to->Name()); it != handler.ConversionFuncs.end())
-			return ConversionResult::DataCorrupted; /// TODO: the conversion funcs should be pairs (or a single function<result<ConversionResult,string>(..., bool just_check)>)
-		return ConversionResult::DataLost;
-	}
-	case DefinitionType::Enum:
-		return ConversionResult::ConversionImpossible;
-	case DefinitionType::Struct:
-		return ConversionResult::ConversionImpossible;
-	case DefinitionType::Class:
-		return ConversionResult::ConversionImpossible;
-	}
-	throw runtime_error(format("unknown type type: {}", magic_enum::enum_name(from.Type->Type())));
-}
-
-result<void, string> DataStore::Convert(json& value, TypeReference const& from, TypeReference const& to)
-{
-	if (!from) return failure("source type is none");
-	if (!to) return failure("destination type is none");
-
-	if (from == to)
-		return success();
-
-	if (IsVoid(from))
-		return InitializeValue(to, value);
-	if (IsVoid(to))
-	{
-		value = {};
-		return success();
-	}
-
-	switch (from.Type->Type())
-	{
-	case DefinitionType::BuiltIn:
-	{
-		auto& handler = mBuiltIns.at(from.Type->Name());
-		if (auto it = handler.ConversionFuncs.find(to->Name()); it != handler.ConversionFuncs.end())
-			return it->second(*this, value, from, to);
-		return InitializeValue(to, value);
-	}
-	case DefinitionType::Enum:
-		return failure("TODO: cannot convert values to enums");
-	case DefinitionType::Struct:
-		return failure("TODO: cannot convert values to structs");
-	case DefinitionType::Class:
-		return failure("TODO: cannot convert values to classes");
-	}
-	return failure(format("unknown type type: {}", magic_enum::enum_name(from.Type->Type())));
-}
-
-template <typename FUNC>
-void DataStore::Do(TypeReference const& type, json& value, FUNC&& func)
-{
-	if (!type)
-	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
-		return;
-	}
-
-	switch (type.Type->Type())
-	{
-	case DefinitionType::BuiltIn:
-		func(mBuiltIns.at(type.Type->Name()), type, value);
-		break;
-	case DefinitionType::Enum:
-		break;
-	case DefinitionType::Struct:
-		break;
-	case DefinitionType::Class:
-		break;
-	}
-}
-
-void DataStore::ViewValue(TypeReference const& type, json& value, json const& field_attributes)
-{
-	//Do(type, value, [&](auto& handlers, TypeReference const& type, json& value) { handlers.ViewFunc(*this, type, value, field_attributes); });
-}
-
-bool DataStore::EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path)
-{
-	if (!type)
-	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
-		return false;
-	}
-
-	switch (type.Type->Type())
-	{
-	case DefinitionType::BuiltIn:
-		return mBuiltIns.at(type.Type->Name()).EditorFunc(*this, type, value, field_attributes, move(value_path));
-	case DefinitionType::Enum:
-		break;
-	case DefinitionType::Struct:
-		break;
-	case DefinitionType::Class:
-		break;
-	}
-
-	return false;
-}
-
-result<void, string> DataStore::InitializeVoid(TypeReference const& type, json& value) { value = {}; return success(); }
-result<void, string> DataStore::InitializeF32(TypeReference const& type, json& value) { value = float{}; return success(); }
-result<void, string> DataStore::InitializeF64(TypeReference const& type, json& value) { value = double{}; return success(); }
-result<void, string> DataStore::InitializeI8(TypeReference const& type, json& value) { value = int8_t{}; return success(); }
-result<void, string> DataStore::InitializeI16(TypeReference const& type, json& value) { value = int16_t{}; return success(); }
-result<void, string> DataStore::InitializeI32(TypeReference const& type, json& value) { value = int32_t{}; return success(); }
-result<void, string> DataStore::InitializeI64(TypeReference const& type, json& value) { value = int64_t{}; return success(); }
-result<void, string> DataStore::InitializeU8(TypeReference const& type, json& value) { value = uint8_t{}; return success(); }
-result<void, string> DataStore::InitializeU16(TypeReference const& type, json& value) { value = uint16_t{}; return success(); }
-result<void, string> DataStore::InitializeU32(TypeReference const& type, json& value) { value = uint32_t{}; return success(); }
-result<void, string> DataStore::InitializeU64(TypeReference const& type, json& value) { value = uint64_t{}; return success(); }
-result<void, string> DataStore::InitializeBool(TypeReference const& type, json& value) { value = bool{}; return success(); }
-result<void, string> DataStore::InitializeString(TypeReference const& type, json& value) { value = string{}; return success(); }
-result<void, string> DataStore::InitializeBytes(TypeReference const& type, json& value) { value = json::binary_t{}; return success(); }
-result<void, string> DataStore::InitializeFlags(TypeReference const& type, json& value) { value = uint64_t{}; return success(); }
-result<void, string> DataStore::InitializeList(TypeReference const& type, json& value) { value = json::array(); return success(); }
-result<void, string> DataStore::InitializeArray(TypeReference const& type, json& value)
-{
-	value = json::array();
-	auto& arr = value.get_ref<json::array_t&>();
-	arr.resize(get<uint64_t>(type.TemplateArguments.at(1)), json{});
-	auto& element_type = get<TypeReference>(type.TemplateArguments.at(0));
-	for (auto& el : arr)
-	{
-		auto result = InitializeValue(element_type, el);
-		if (result.has_error())
-			return result;
-	}
-	return success();
-}
-result<void, string> DataStore::InitializeRef(TypeReference const& type, json& value) { value = json{}; return success(); }
-result<void, string> DataStore::InitializeOwn(TypeReference const& type, json& value) { value = json{}; return success(); }
-result<void, string> DataStore::InitializeVariant(TypeReference const& type, json& value)
-{
-	value = json{};
-	value = json::array();
-	auto& arr = value.get_ref<json::array_t&>();
-	arr.resize(2, json{});
-	arr.at(0) = 0; /// first element of variant is active by default
-
-	auto& element_type = get<TypeReference>(type.TemplateArguments.at(0));
-	return InitializeValue(element_type, arr.at(1));
-}
-
-template <typename... ARGS>
-void Text(string_view str, ARGS&&... args)
-{
-	auto f = vformat(str, make_format_args(forward<ARGS>(args)...));
-	ImGui::Text("%s", f.c_str());
-}
-
-void DataStore::ViewVoid(TypeReference const& type, json const& value, json const& field_attributes) { Text("void"); }
-void DataStore::ViewF32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (float)value); }
-void DataStore::ViewF64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (double)value); }
-void DataStore::ViewI8(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int8_t)value); }
-void DataStore::ViewI16(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int16_t)value); }
-void DataStore::ViewI32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int32_t)value); }
-void DataStore::ViewI64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (int64_t)value); }
-void DataStore::ViewU8(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint8_t)value); }
-void DataStore::ViewU16(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint16_t)value); }
-void DataStore::ViewU32(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint32_t)value); }
-void DataStore::ViewU64(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (uint64_t)value); }
-void DataStore::ViewBool(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (bool)value); }
-void DataStore::ViewString(TypeReference const& type, json const& value, json const& field_attributes) { Text("{}", (string_view)value); }
-void DataStore::ViewBytes(TypeReference const& type, json const& value, json const& field_attributes) { Text("<bytes>"); }
-void DataStore::ViewFlags(TypeReference const& type, json const& value, json const& field_attributes) { Text("<flags>"); }
-void DataStore::ViewList(TypeReference const& type, json const& value, json const& field_attributes) { Text("<list>"); }
-void DataStore::ViewArray(TypeReference const& type, json const& value, json const& field_attributes) { Text("<array>"); }
-void DataStore::ViewRef(TypeReference const& type, json const& value, json const& field_attributes) { Text("<ref>"); }
-void DataStore::ViewOwn(TypeReference const& type, json const& value, json const& field_attributes) { Text("<own>"); }
-void DataStore::ViewVariant(TypeReference const& type, json const& value, json const& field_attributes) { Text("<variant>"); }
-
-using namespace ImGui;
-
+/*
 static constexpr bool log_changes = false;
 
 void DataStore::LogDataChange(json::json_pointer const& value_path, json const& from, json const& value)
@@ -514,30 +224,563 @@ bool DataStore::EditOwn(TypeReference const& type, json& value, json const& fiel
 bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
 */
 
-bool ForEveryObjectWithTypeName(Schema const& schema, TypeReference const& type, json& value, string_view type_name, function<bool(json&)> const& object_func)
+struct IBuiltInHandler
 {
-	VisitorFunc visitor = [type_name, object_func = move(object_func), &visitor](Schema const& schema, TypeReference const& child_type, json::json_pointer index, json& child_value) {
-		if (child_type->Name() == type_name)
-		{
-			if (object_func(child_value))
-				return true;
-		}
-		return VisitValue(schema, child_type, child_value, visitor);
-	};
+	virtual ~IBuiltInHandler() noexcept = default;
 
-	return visitor(schema, type, json::json_pointer{}, value);
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const = 0;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const = 0;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const = 0;
+	virtual bool Visit(json& value, VisitorFunc visitor) const = 0;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const = 0;
+};
+
+struct IScalarHandler : IBuiltInHandler
+{
+	virtual bool Visit(json& value, VisitorFunc visitor) const { return false; }
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override { return false; }
+};
+
+struct VoidHandler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mVoidHandler;
+
+struct F32Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mF32Handler;
+
+struct F64Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mF64Handler;
+
+struct I8Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mI8Handler;
+
+struct I16Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mI16Handler;
+
+struct I32Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mI32Handler;
+
+struct I64Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+} mI64Handler;
+
+struct U8Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mU8Handler;
+
+struct U16Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mU16Handler;
+
+struct U32Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mU32Handler;
+
+struct U64Handler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mU64Handler;
+
+struct BoolHandler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mBoolHandler;
+
+struct StringHandler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mStringHandler;
+
+struct BytesHandler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mBytesHandler;
+
+struct FlagsHandler : IScalarHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+
+
+} mFlagsHandler;
+
+struct ListHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+
+
+} mListHandler;
+
+struct ArrayHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+
+
+} mArrayHandler;
+
+struct RefHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+
+
+} mRefHandler;
+
+struct OwnHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+
+
+} mOwnHandler;
+
+struct VariantHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
+	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+
+
+} mVariantHandler;
+
+
+result<void, string> VoidHandler::Initialize(TypeReference const& type, json& value) const { value = {}; return success(); }
+result<void, string> F32Handler::Initialize(TypeReference const& type, json& value) const { value = float{}; return success(); }
+result<void, string> F64Handler::Initialize(TypeReference const& type, json& value) const { value = double{}; return success(); }
+result<void, string> I8Handler::Initialize(TypeReference const& type, json& value) const { value = int8_t{}; return success(); }
+result<void, string> I16Handler::Initialize(TypeReference const& type, json& value) const { value = int16_t{}; return success(); }
+result<void, string> I32Handler::Initialize(TypeReference const& type, json& value) const { value = int32_t{}; return success(); }
+result<void, string> I64Handler::Initialize(TypeReference const& type, json& value) const { value = int64_t{}; return success(); }
+result<void, string> U8Handler::Initialize(TypeReference const& type, json& value) const { value = uint8_t{}; return success(); }
+result<void, string> U16Handler::Initialize(TypeReference const& type, json& value) const { value = uint16_t{}; return success(); }
+result<void, string> U32Handler::Initialize(TypeReference const& type, json& value) const { value = uint32_t{}; return success(); }
+result<void, string> U64Handler::Initialize(TypeReference const& type, json& value) const { value = uint64_t{}; return success(); }
+result<void, string> BoolHandler::Initialize(TypeReference const& type, json& value) const { value = bool{}; return success(); }
+result<void, string> StringHandler::Initialize(TypeReference const& type, json& value) const { value = string{}; return success(); }
+result<void, string> BytesHandler::Initialize(TypeReference const& type, json& value) const { value = json::binary_t{}; return success(); }
+result<void, string> FlagsHandler::Initialize(TypeReference const& type, json& value) const { value = uint64_t{}; return success(); }
+result<void, string> ListHandler::Initialize(TypeReference const& type, json& value) const { value = json::array(); return success(); }
+result<void, string> ArrayHandler::Initialize(TypeReference const& type, json& value) const
+{
+	value = json::array();
+	auto& arr = value.get_ref<json::array_t&>();
+	arr.resize(get<uint64_t>(type.TemplateArguments.at(1)), json{});
+	auto& element_type = get<TypeReference>(type.TemplateArguments.at(0));
+	for (auto& el : arr)
+	{
+		auto result = InitializeValue(element_type, el);
+		if (result.has_error())
+			return result;
+	}
+	return success();
+}
+result<void, string> RefHandler::Initialize(TypeReference const& type, json& value) const { value = json{}; return success(); }
+result<void, string> OwnHandler::Initialize(TypeReference const& type, json& value) const { value = json{}; return success(); }
+result<void, string> VariantHandler::Initialize(TypeReference const& type, json& value) const
+{
+	value = json{};
+	value = json::array();
+	auto& arr = value.get_ref<json::array_t&>();
+	arr.resize(2, json{});
+	arr.at(0) = 0; /// first element of variant is active by default
+
+	auto& element_type = get<TypeReference>(type.TemplateArguments.at(0));
+	return InitializeValue(element_type, arr.at(1));
 }
 
-bool ForEveryObjectWithTypeName(Schema const& schema, TypeReference const& type, json const& value, string_view type_name, function<bool(json const&)> const& object_func)
+template <typename... ARGS>
+void Text(string_view str, ARGS&&... args)
 {
-	ConstVisitorFunc visitor = [type_name, object_func = move(object_func), &visitor](Schema const& schema, TypeReference const& child_type, json::json_pointer index, json const& child_value) {
+	auto f = vformat(str, make_format_args(forward<ARGS>(args)...));
+	ImGui::Text("%s", f.c_str());
+}
+
+void VoidHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("void"); }
+void F32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (float)value); }
+void F64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (double)value); }
+void I8Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int8_t)value); }
+void I16Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int16_t)value); }
+void I32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int32_t)value); }
+void I64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int64_t)value); }
+void U8Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint8_t)value); }
+void U16Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint16_t)value); }
+void U32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint32_t)value); }
+void U64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint64_t)value); }
+void BoolHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (bool)value); }
+void StringHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (string_view)value); }
+void BytesHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<bytes>"); }
+void FlagsHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<flags>"); }
+void ListHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<list>"); }
+void ArrayHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<array>"); }
+void RefHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<ref>"); }
+void OwnHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<own>"); }
+void VariantHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<variant>"); }
+
+map<string, IBuiltInHandler const*, less<>> const mBuiltIns = {
+	{"void", &mVoidHandler},
+	{"f32", &mF32Handler},
+	{"f64", &mF64Handler},
+	{"i8", &mI8Handler},
+	{"i16", &mI16Handler},
+	{"i32", &mI32Handler},
+	{"i64", &mI64Handler},
+	{"u8", &mU8Handler},
+	{"u16", &mU16Handler},
+	{"u32", &mU32Handler},
+	{"u64", &mU64Handler},
+	{"bool", &mBoolHandler},
+	{"string", &mStringHandler},
+	{"bytes", &mBytesHandler},
+	{"flags", &mFlagsHandler},
+	{"list", &mListHandler},
+	{"array", &mArrayHandler},
+	{"ref", &mRefHandler},
+	{"own", &mOwnHandler},
+	{"variant", &mVariantHandler},
+};
+
+using ConversionFunction = result<void, string>(json&, TypeReference const&, TypeReference const&);
+map<pair<string, string>, function<ConversionFunction>, less<>> const mConversionFuncs = [] {
+	map<pair<string, string>, function<ConversionFunction>, less<>> conversion_funcs;
+
+	auto AddConversion = [&]<typename A, typename B>(type_identity<pair<A, B>>, function<ConversionFunction> func) {
+		if constexpr (!is_same_v<A, B>)
+		{
+			conversion_funcs[{name_of(type_identity<A>{}), name_of(type_identity<B>{})}] = move(func);
+		}
+	};
+
+	auto AddNumericConversion = [&]<typename A, typename B>(type_identity<pair<A, B>> type_pair) {
+		AddConversion(type_pair, [](json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+			value = (B)(A)value;
+			return success();
+		});
+	};
+	auto AddConversionForEachPair = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>, auto && conversion_func) {
+		(conversion_func(type_identity<PAIRS>{}), ...);
+	};
+	auto AddConversionForTypeCrossProduct = [&]<typename... ELEMENTS1, typename... ELEMENTS2>(type_identity<tuple<ELEMENTS1...>>, type_identity<tuple<ELEMENTS2...>>, auto&& conversion_func) {
+		AddConversionForEachPair(type_identity<typename cross_product<tuple<ELEMENTS1...>, tuple<ELEMENTS2...>>::type>{}, conversion_func);
+	};
+	using numeric_type_list = tuple<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
+	AddConversionForTypeCrossProduct(type_identity<tuple<bool>>{}, type_identity<numeric_type_list>{}, AddNumericConversion);
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<bool>>{}, AddNumericConversion);
+
+	AddConversionForTypeCrossProduct(type_identity<numeric_type_list>{}, type_identity<tuple<string>>{}, [&]<typename A, typename B>(type_identity<pair<A, B>> type_pair) {
+		AddConversion(type_pair, [](json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+			value = ::std::to_string((A)value);
+			/// TODO: using to_chars would be faster
+			return success();
+		});
+	});
+
+	AddConversionForTypeCrossProduct(type_identity<tuple<string>>{}, type_identity<numeric_type_list>{}, [&]<typename A, typename B>(type_identity<pair<A, B>> type_pair) {
+		AddConversion(type_pair, [](json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
+			auto& strref = value.get_ref<json::string_t const&>();
+			B dest_value{};
+			ignore = from_chars(to_address(begin(strref)), to_address(end(strref)), dest_value);
+			value = dest_value;
+			return success();
+		});
+	});
+
+	/// TODO: Add more conversions:
+	/// string <-> bytes
+	/// bytes <-> list<u8>
+	/// list<T> <-> array<T, N>
+	/// flags<E> <-> u64
+	/// variant<T1, T2, ...> <-> T1/T2/...
+	/// variant<T1, T2, ...> <-> variant<U1, U2, ...> 
+
+	return conversion_funcs;
+}();
+
+result<void, string> InitializeValue(TypeReference const& type, json& value)
+{
+	if (!type)
+		return failure("no type provided");
+
+	switch (type.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		return mBuiltIns.at(type.Type->Name())->Initialize(type, value);
+	case DefinitionType::Enum:
+		return failure("TODO: cannot initialize enums");
+	case DefinitionType::Struct:
+		return failure("TODO: cannot initialize structs");
+	case DefinitionType::Class:
+		return failure("TODO: cannot initialize classes");
+	}
+	return failure(format("unknown type type: {}", magic_enum::enum_name(type.Type->Type())));
+}
+
+void ViewValue(TypeReference const& type, json& value, json const& field_attributes, DataStore const* store)
+{
+	if (!type)
+	{
+		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		return;
+	}
+
+	switch (type.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		mBuiltIns.at(type.Type->Name())->View(type, value, field_attributes, store);
+		return;
+	case DefinitionType::Enum:
+		break;
+	case DefinitionType::Struct:
+		break;
+	case DefinitionType::Class:
+		break;
+	}
+
+	return;
+}
+
+bool EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path, DataStore* store)
+{
+	if (!type)
+	{
+		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		return false;
+	}
+
+	switch (type.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		return mBuiltIns.at(type.Type->Name())->Edit(type, value, field_attributes, move(value_path), store);
+	case DefinitionType::Enum:
+		break;
+	case DefinitionType::Struct:
+		break;
+	case DefinitionType::Class:
+		break;
+	}
+
+	return false;
+}
+
+ConversionResult ResultOfConversion(TypeReference const& from, TypeReference const& to, json const& value)
+{
+	if (!from) return ConversionResult::ConversionImpossible;
+	if (!to) return ConversionResult::ConversionImpossible;
+
+	if (from == to)
+		return ConversionResult::DataPreserved;
+
+	if (from->Name() == "void")
+		return ConversionResult::DataPreserved;
+	if (to->Name() == "void")
+		return ConversionResult::DataLost;
+
+	switch (from.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+	{
+		auto& handler = mBuiltIns.at(from.Type->Name());
+		if (auto it = mConversionFuncs.find({ from->Name(), to->Name() }); it != mConversionFuncs.end())
+			return ConversionResult::DataCorrupted; /// TODO: the conversion funcs should be pairs (or a single function<result<ConversionResult,string>(..., bool just_check)>)
+		return ConversionResult::DataLost;
+	}
+	case DefinitionType::Enum:
+		return ConversionResult::ConversionImpossible;
+	case DefinitionType::Struct:
+		return ConversionResult::ConversionImpossible;
+	case DefinitionType::Class:
+		return ConversionResult::ConversionImpossible;
+	}
+	throw runtime_error(format("unknown type type: {}", magic_enum::enum_name(from.Type->Type())));
+}
+
+result<void, string> Convert(TypeReference const& from, TypeReference const& to, json& value)
+{
+	if (!from) return failure("source type is none");
+	if (!to) return failure("destination type is none");
+
+	if (from == to)
+		return success();
+
+	if (from->Name() == "void")
+		return InitializeValue(to, value);
+	if (to->Name() == "void")
+	{
+		value = {};
+		return success();
+	}
+
+	switch (from.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		/// TODO: Also search mConversionFuncs for {from, "*"} and {"*", to}
+	{
+		auto& handler = mBuiltIns.at(from.Type->Name());
+		if (auto it = mConversionFuncs.find({ from->Name(), to->Name() }); it != mConversionFuncs.end())
+			return it->second(value, from, to);
+		return InitializeValue(to, value);
+	}
+	case DefinitionType::Enum:
+		return failure("TODO: cannot convert values to enums");
+	case DefinitionType::Struct:
+		return failure("TODO: cannot convert values to structs");
+	case DefinitionType::Class:
+		return failure("TODO: cannot convert values to classes");
+	}
+	return failure(format("unknown type type: {}", magic_enum::enum_name(from.Type->Type())));
+}
+
+bool VisitValue(TypeReference const& type, json& value, VisitorFunc visitor)
+{
+	if (!type)
+	{
+		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		return false;
+	}
+
+	switch (type.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		return mBuiltIns.at(type.Type->Name())->Visit(value, visitor);
+	case DefinitionType::Enum:
+		break;
+	case DefinitionType::Struct:
+		break;
+	case DefinitionType::Class:
+		break;
+	}
+
+	return false;
+}
+
+bool VisitValue(TypeReference const& type, json const& value, ConstVisitorFunc visitor)
+{
+	if (!type)
+	{
+		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		return false;
+	}
+
+	switch (type.Type->Type())
+	{
+	case DefinitionType::BuiltIn:
+		return mBuiltIns.at(type.Type->Name())->Visit(value, visitor);
+	case DefinitionType::Enum:
+		break;
+	case DefinitionType::Struct:
+		break;
+	case DefinitionType::Class:
+		break;
+	}
+
+	return false;
+}
+
+bool ForEveryObjectWithTypeName(TypeReference const& type, json& value, string_view type_name, function<bool(json&)> const& object_func)
+{
+	VisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json& child_value) {
 		if (child_type->Name() == type_name)
 		{
 			if (object_func(child_value))
 				return true;
 		}
-		return VisitValue(schema, child_type, child_value, visitor);
+		return VisitValue(child_type, child_value, visitor);
 	};
 
-	return visitor(schema, type, json::json_pointer{}, value);
+	return visitor(type, json::json_pointer{}, value);
+}
+
+bool ForEveryObjectWithTypeName(TypeReference const& type, json const& value, string_view type_name, function<bool(json const&)> const& object_func)
+{
+	ConstVisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json const& child_value) {
+		if (child_type->Name() == type_name)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(child_type, child_value, visitor);
+	};
+
+	return visitor(type, json::json_pointer{}, value);
 }

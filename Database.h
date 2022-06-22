@@ -116,7 +116,7 @@ private:
 	template <typename T, typename... ARGS>
 	T const* AddType(ARGS&&... args)
 	{
-		auto ptr = unique_ptr<T>(new T{ forward<ARGS>(args)... });
+		auto ptr = unique_ptr<T>(new T{ mSchema, forward<ARGS>(args)... });
 		auto result = ptr.get();
 		mSchema.mDefinitions.push_back(move(ptr));
 		return result;
