@@ -139,10 +139,71 @@ result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference con
 	return success();
 }
 
-result<void, string> ValidateType(TypeReference const& type, function<result<void, string>(TypeReference const&)> subtype_validator)
+struct TypeValidator
+{
+	set<TypeDefinition const*> OpenTypes;
+
+	result<void, string> ValidateOpenness(TypeReference const& type)
+	{
+		/// If the type itself is open
+		if (OpenTypes.contains(type.Type))
+			return failure(format("type is dependent on an incomplete type: {}", type.Type->Name()));
+
+		/// If any base type is open
+		auto parent_type = type->BaseType().Type;
+		while (parent_type && parent_type->IsRecord())
+		{
+			if (OpenTypes.contains(parent_type))
+			{
+				/// For performance, insert all types up to the open base type into the open set
+				for (auto t = type.Type; t != parent_type; t = t->BaseType().Type)
+					OpenTypes.insert(t);
+				return failure(format("type is dependent on an incomplete type: {}", parent_type->Name()));
+			}
+			parent_type = type->BaseType().Type;
+		}
+		return success();
+	}
+
+	result<void, string> ValidateType(TypeReference const& type, bool must_be_complete = false)
+	{
+		if (must_be_complete)
+		{
+			if (auto incomplete = ValidateOpenness(type); incomplete.has_error())
+				return failure(format("{}: {}", type.ToString(), incomplete.error()));
+		}
+
+		if (type.TemplateArguments.size() < type.Type->TemplateParameters().size())
+			return failure(format("{}: invalid number of template arguments given", type.ToString()));
+
+		for (size_t i = 0; i < type.TemplateArguments.size(); ++i)
+		{
+			auto& arg = type.TemplateArguments[i];
+			auto& param = type.Type->TemplateParameters().at(i);
+			auto result = ValidateTemplateArgument(arg, param);
+			if (result.has_failure())
+				return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+
+			if (auto ref = get_if<TypeReference>(&arg))
+			{
+				if (result = ValidateType(*ref, param.MustBeComplete()); result.has_failure())
+					return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+			}
+		}
+		return success();
+	}
+};
+
+result<void, string> ValidateType(TypeReference const& type)
+{
+	TypeValidator validator;
+	return validator.ValidateType(type);
+}
+
+/*result<void, string> ValidateType(TypeReference const& type, function<result<void, string>(TypeReference const&)> subtype_validator)
 {
 	if (auto incomplete = subtype_validator(type); incomplete.has_error())
-		return failure(format("{}: {}", type.ToString(), incomplete.as_failure()));
+		return failure(format("{}: {}", type.ToString(), incomplete.error()));
 
 	if (type.TemplateArguments.size() < type.Type->TemplateParameters().size())
 		return failure(format("{}: invalid number of template arguments given", type.ToString()));
@@ -164,37 +225,14 @@ result<void, string> ValidateType(TypeReference const& type, function<result<voi
 		}
 	}
 	return success();
-}
+}*/
 
 result<void, string> ValidateFieldType(FieldDefinition const* def, TypeReference const& type)
 {
 	if (!type.Type)
 		return failure("field type is invalid");
 
-	set<TypeDefinition const*> open_types;
-	open_types.insert(def->ParentRecord);
-	auto is_open = [&](TypeReference const& type_ref) -> result<void, string> {
-		/// If the type itself is open
-		if (open_types.contains(type_ref.Type)) 
-			return failure(format("type is dependent on an incomplete type: {}", type_ref.Type->Name()));
-
-		/// If any base type is open
-		auto parent_type = type->BaseType().Type;
-		while (parent_type && parent_type->IsRecord())
-		{
-			if (open_types.contains(parent_type))
-			{
-				/// For performance, insert all types up to the open base type into the open set
-				for (auto t = type_ref.Type; t != parent_type; t = t->BaseType().Type)
-					open_types.insert(t);
-				return failure(format("type is dependent on an incomplete type: {}", parent_type->Name()));
-			}
-			parent_type = type->BaseType().Type;
-		}
-		return success();
-	};
-
-	return ValidateType(type, is_open);
+	TypeValidator validator;
+	validator.OpenTypes.insert(def->ParentRecord);
+	return validator.ValidateType(type);
 }
-
-

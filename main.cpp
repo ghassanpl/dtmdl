@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "pch.h"
 
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_sdlrenderer.h"
@@ -69,16 +70,16 @@ void OpenModal(ARGS&&... args)
 }
 
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ValidateFunc = function<result<void, string>(Database&, EDITING_OBJECT, OBJECT_PROPERTY const&)>;
+using ValidateFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using EditorFunc = function<void(Database&, EDITING_OBJECT, OBJECT_PROPERTY&)>;
+using EditorFunc = function<void(EDITING_OBJECT, OBJECT_PROPERTY&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ApplyFunc = function<result<void, string>(Database&, EDITING_OBJECT, OBJECT_PROPERTY const&)>;
+using ApplyFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using GetterFunc = function<OBJECT_PROPERTY(Database&, EDITING_OBJECT)>;
+using GetterFunc = function<OBJECT_PROPERTY(EDITING_OBJECT)>;
 
-void Display(Database& db, string const& val) { ImGui::Text("%s", val.c_str()); }
-void Display(Database& db, TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
+void Display(string const& val) { ImGui::Text("%s", val.c_str()); }
+void Display(TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
 
 template <typename E, typename P>
 bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> validate, EditorFunc<E, P> editor, ApplyFunc<E, P> apply, GetterFunc<E, P> getter)
@@ -91,15 +92,15 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 
 	if (auto it = is_editing.find(def); it == is_editing.end())
 	{
-		decltype(auto) val = getter(db, def);
-		if (validate(db, def, val).has_error())
+		decltype(auto) val = getter(def);
+		if (validate(def, val).has_error())
 			is_editing[def] = val;
 	}
 
 	if (auto it = is_editing.find(def); it != is_editing.end())
 	{
-		editor(db, def, it->second);
-		if (auto result = validate(db, def, it->second); result.has_error())
+		editor(def, it->second);
+		if (auto result = validate(def, it->second); result.has_error())
 		{
 			TextColored({ 1,0,0,1 }, "%s", result.error().c_str());
 			BeginDisabled();
@@ -110,7 +111,7 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 		{
 			if (SmallButton("Apply"))
 			{
-				auto result = apply(db, def, it->second);
+				auto result = apply(def, it->second);
 				if (result.has_error())
 				{
 					/// TODO: Show error
@@ -128,8 +129,8 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 	}
 	else
 	{
-		decltype(auto) val = getter(db, def);
-		Display(db, val); SameLine();
+		decltype(auto) val = getter(def);
+		Display(val); SameLine();
 		if (SmallButton("Edit"))
 			is_editing[def] = val;
 	}
@@ -142,22 +143,22 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 bool TypeNameEditor(Database& db, TypeDefinition const* def)
 {
 	return GenericEditor<TypeDefinition const*, string>("Type Name", db, def,
-		&Database::ValidateTypeName,
-		[](Database& db, TypeDefinition const* def, string& name) {
+		bind_front(&Database::ValidateTypeName, &db),
+		[](TypeDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
 			InputText("###typename", &name);
 		},
-		&Database::SetTypeName,
-			[](Database& db, TypeDefinition const* def) -> auto const& { return def->Name(); }
-		);
+		bind_front(&Database::SetTypeName, &db),
+		[](TypeDefinition const* def) -> auto const& { return def->Name(); }
+	);
 }
 
 bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 {
 	return GenericEditor<RecordDefinition const*, TypeReference>("Base Type", db, def,
-		&Database::ValidateRecordBaseType,
-		[](Database& db, RecordDefinition const* def, TypeReference& current) {
+		bind_front(&Database::ValidateRecordBaseType, &db),
+		[&db](RecordDefinition const* def, TypeReference& current) {
 			using namespace ImGui;
 
 			SetNextItemWidth(GetContentRegionAvail().x);
@@ -176,23 +177,23 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 				EndCombo();
 			}
 		},
-		&Database::SetRecordBaseType,
-			[](Database& db, RecordDefinition const* def) -> auto const& { return def->BaseType(); }
-		);
+		bind_front(&Database::SetRecordBaseType, &db),
+		[](RecordDefinition const* def) -> auto const& { return def->BaseType(); }
+	);
 }
 
 bool FieldNameEditor(Database& db, FieldDefinition const* def)
 {
 	return GenericEditor<FieldDefinition const*, string>("Field Name", db, def,
-		&Database::ValidateFieldName,
-		[](Database& db, FieldDefinition const* def, string& name) {
+		bind_front(&Database::ValidateFieldName, &db),
+		[](FieldDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
 			InputText("###fieldname", &name);
 		},
-		&Database::SetFieldName,
-			[](Database& db, FieldDefinition const* def) -> auto const& { return def->Name; }
-		);
+		bind_front(&Database::SetFieldName, &db),
+		[](FieldDefinition const* def) -> auto const& { return def->Name; }
+	);
 }
 
 void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter = {}, const char* label = nullptr)
@@ -252,15 +253,15 @@ void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter = {}, const
 bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 {
 	return GenericEditor<FieldDefinition const*, TypeReference>("Field Type", db, def,
-		&Database::ValidateFieldType,
-		[](Database& db, FieldDefinition const* field, TypeReference& current) {
+		&ValidateFieldType,
+		[&db](FieldDefinition const* field, TypeReference& current) {
 			using namespace ImGui;
 
 			TypeChooser(db, current, [&db, field](TypeDefinition const* def) { return !def->IsClass() && !db.Schema().IsParent(field->ParentRecord, def); });
 		},
-		&Database::SetFieldType,
-			[](Database& db, FieldDefinition const* def) -> auto const& { return def->FieldType; }
-		);
+		bind_front(&Database::SetFieldType, &db),
+		[](FieldDefinition const* def) -> auto const& { return def->FieldType; }
+	);
 }
 
 void CheckError(result<void, string> val, string else_string)
@@ -557,13 +558,12 @@ struct DeleteTypeModal : IModal
 };
 
 template <typename FUNC>
-void DoConfirmUI(string button_text, string confirm_text, FUNC&& func)
+void DoConfirmUI(string confirm_text, FUNC&& func)
 {
 	using namespace ImGui;
-	Button(button_text.c_str());
 	if (BeginPopupContextItem(confirm_text.c_str(), 0))
 	{
-		Text(confirm_text.c_str());
+		Text("%s", confirm_text.c_str());
 		if (Button("Yes"))
 		{
 			func();
@@ -578,7 +578,8 @@ void DoConfirmUI(string button_text, string confirm_text, FUNC&& func)
 
 void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 {
-	DoConfirmUI("Delete Type", "Are you sure you want to delete this type?", [&db, def]() {
+	ImGui::Button("Delete Type");
+	DoConfirmUI("Are you sure you want to delete this type?", [&db, def]() {
 		auto usages = db.LocateTypeUsages(def);
 		if (usages.empty())
 			LateExec.push_back([&db, def] { CheckError(db.DeleteType(def)); });
@@ -590,7 +591,8 @@ void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 
 void DoDeleteValueUI(DataStore& store, string_view name)
 {
-	DoConfirmUI("Delete Value", "Are you sure you want to delete this value?", [&store, name]() {
+	ImGui::SmallButton("Delete Value");
+	DoConfirmUI("Are you sure you want to delete this value?", [&store, name]() {
 		LateExec.push_back([&store, name] { store.DeleteValue(name); });
 	});
 }
@@ -609,7 +611,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 
 	DoDeleteTypeUI(db, def);
 
-	if (BeginTable("Fields", 4))
+	if (BeginTable("Fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
 	{
 		TableSetupColumn("Name");
 		TableSetupColumn("Type");
@@ -619,7 +621,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 		TableHeadersRow();
 
 		TableNextRow();
-		size_t index = 0;
+		int index = 0;
 		for (auto& field : def->AllFieldsOrdered())
 		{
 			PushID(index);
@@ -650,21 +652,22 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
-				if (Button("Up"))
+				if (SmallButton("Up"))
 					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
 				EndDisabled();
 				SameLine();
 
 				BeginDisabled(index == def->Fields().size() - 1);
-				if (Button("Down"))
+				if (SmallButton("Down"))
 					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
 				EndDisabled();
 				SameLine();
 
-				Button("Duplicate"); SameLine();
-				Button("Copy"); SameLine();
+				SmallButton("Duplicate"); SameLine();
+				SmallButton("Copy"); SameLine();
 
-				DoConfirmUI("Delete", "Are you sure you want to delete this field?", [&db, field]() {
+				SmallButton("Delete");
+				DoConfirmUI("Are you sure you want to delete this field?", [&db, field]() {
 					auto usages = db.StoresWithFieldData(field);
 					if (usages.empty())
 						LateExec.push_back([&db, field] { CheckError(db.DeleteField(field)); });
@@ -700,7 +703,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 	/// TODO: PropertyEditor<bool>(enoom, "backcomp", "Try To Ensure Backwards Compatibility");
 
-	if (BeginTable("Enumerators", 5))
+	if (BeginTable("Enumerators", 5, ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable))
 	{
 		TableSetupColumn("Name");
 		TableSetupColumn("Value");
@@ -884,52 +887,74 @@ void DataTab()
 				}
 				else
 				{
-					for (auto& [name, value] : store.Roots().items())
+					if (BeginTable("Data Values", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
 					{
-						PushID(&value);
-						//string name = value.at("name");
-						TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
-						Text("Name: %s", name.c_str()); SameLine(); SmallButton("Edit");
+						TableSetupColumn("Name");
+						TableSetupColumn("Type");
+						TableSetupColumn("Value");
+						TableSetupColumn("Actions");
+						TableSetupScrollFreeze(0, 1);
+						TableHeadersRow();
 
-						Text("Type:"); SameLine(); GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
-							/// validator
-							[&](Database& db, json* value, TypeReference const& new_type) -> result<void, string> {
-								if (ResultOfConversion(old_type, new_type, value->at("value")) == ConversionResult::ConversionImpossible)
-									return failure("conversion to this type is impossible");
-								return success();
-							},
-							/// editor
-							[&](Database& db, json* value, TypeReference& current) {
-								TypeChooser(db, current);
-								auto result = ResultOfConversion(old_type, current, value->at("value"));
-								switch (result)
-								{
-								case ConversionResult::DataCorrupted:
-									TextColored({ 1,1,0,1 }, "WARNING: Data might be corrupted if you attempt this type change!");
-									break;
-								case ConversionResult::DataLost:
-									TextColored({ 1,1,0,1 }, "WARNING: Data WILL BE LOST if you attempt this type change!");
-									break;
-								}
-							},
+						TableNextRow();
+						int index = 0;
+
+						for (auto& [name, value] : store.Roots().items())
+						{
+							PushID(index);
+
+							TableNextColumn();
+							/// FieldNameEditor(db, field);
+							Text("%s", name.c_str()); SameLine(); SmallButton("Edit");
+							TableNextColumn();
+							SetNextItemWidth(GetContentRegionAvail().x);
+							/// FieldTypeEditor(db, field);
+							TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
+							GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
+								/// validator
+								[&](json* value, TypeReference const& new_type) -> result<void, string> {
+									if (ResultOfConversion(old_type, new_type, value->at("value")) == ConversionResult::ConversionImpossible)
+										return failure("conversion to this type is impossible");
+									return ValidateType(new_type);
+								},
+								/// editor
+								[&](json* value, TypeReference& current) {
+									TypeChooser(mDatabase, current);
+									auto result = ResultOfConversion(old_type, current, value->at("value"));
+									switch (result)
+									{
+									case ConversionResult::DataCorrupted:
+										TextColored({ 1,1,0,1 }, "WARNING: Data might be corrupted if you attempt this type change!");
+										break;
+									case ConversionResult::DataLost:
+										TextColored({ 1,1,0,1 }, "WARNING: Data WILL BE LOST if you attempt this type change!");
+										break;
+									}
+								},
 								/// setter
-								[&](Database& db, json* value, TypeReference const& new_type) -> result<void, string> {
-								TypeReference old_type{ db.Schema(), value->at("type") };
-								value->at("type") = new_type.ToJSON();
-								return Convert(old_type, new_type, value->at("value"));
-							},
+								[&](json* value, TypeReference const& new_type) -> result<void, string> {
+									TypeReference old_type{ mDatabase.Schema(), value->at("type") };
+									value->at("type") = new_type.ToJSON();
+									return Convert(old_type, new_type, value->at("value"));
+								},
 								/// getter
-								[](Database& db, json* value) { return TypeReference{ db.Schema(), value->at("type") }; }
+								[&](json* value) { return TypeReference{ mDatabase.Schema(), value->at("type") }; }
 							);
+							TableNextColumn();
+							json::json_pointer ptr{ "/" + name };
+							SetNextItemWidth(GetContentRegionAvail().x);
+							EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"), {}, ptr, & store);
+							TableNextColumn();
 
-						Text("Value:");
-						json::json_pointer ptr{ "/" + name };
-						EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"), {}, ptr, &store);
-						DoDeleteValueUI(store, name);
-						SameLine();
-						Button("Export Value to JSON");
-						Separator();
-						PopID();
+							DoDeleteValueUI(store, name);
+							SameLine();
+							SmallButton("Export Value to JSON");
+
+							index++;
+							PopID();
+						}
+
+						EndTable();
 					}
 				}
 
@@ -1035,7 +1060,7 @@ int main(int, char**)
 				TypesTab();
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Data"))
+			if (ImGui::BeginTabItem("Data Stores"))
 			{
 				DataTab();
 				ImGui::EndTabItem();

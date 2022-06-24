@@ -48,7 +48,6 @@ struct Database
 	result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> ValidateTypeName(Def def, string const& new_name);
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
-	result<void, string> ValidateFieldType(Fld def, TypeReference const& type);
 
 	vector<TypeUsage> LocateTypeUsages(Def type) const;
 
