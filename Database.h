@@ -1,5 +1,5 @@
 #pragma once
-#include <fstream>
+
 #include "Schema.h"
 #include "Formats.h"
 #include "DataStore.h"
@@ -94,9 +94,7 @@ struct Database
 	auto const& Schema() const noexcept { return mSchema; }
 	auto& DataStores() noexcept { return mDataStores; }
 
-	auto VoidType() const noexcept { return mVoid; }
-
-	static bool IsParent(Def parent, Def potential_child);
+	auto VoidType() const noexcept { return mSchema.VoidType(); }
 
 	string Namespace;
 
@@ -112,19 +110,6 @@ private:
 
 	json SaveSchema() const;
 	void LoadSchema(json const& from);
-
-	template <typename T, typename... ARGS>
-	T const* AddType(ARGS&&... args)
-	{
-		auto ptr = unique_ptr<T>(new T{ mSchema, forward<ARGS>(args)... });
-		auto result = ptr.get();
-		mSchema.mDefinitions.push_back(move(ptr));
-		return result;
-	}
-
-	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers);
-
-	BuiltinDefinition const* mVoid = nullptr;
 
 	::Schema mSchema;
 

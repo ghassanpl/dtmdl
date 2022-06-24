@@ -1,7 +1,15 @@
 #pragma once
-#include "Schema.h"
+
+//#include "Schema.h"
 
 struct SimpleOutputter;
+struct Database;
+struct ClassDefinition;
+struct EnumDefinition;
+struct StructDefinition;
+struct TypeDefinition;
+struct TypeReference;
+using TemplateArgument = variant<uint64_t, TypeReference>;
 
 struct FormatPlugin
 {

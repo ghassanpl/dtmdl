@@ -1,13 +1,9 @@
 #pragma once
 
-#include <vector>
-#include <map>
 #include <set>
 #include <variant>
-#include <string>
 #include <array>
 #include <filesystem>
-#include <memory>
 #include <functional>
 #include <format>
 

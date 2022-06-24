@@ -1,4 +1,5 @@
 #include "pch.h"
+
 #include "Validation.h"
 #include "Database.h"
 
@@ -116,7 +117,7 @@ result<void, string> Database::ValidateFieldName(Fld def, string const& new_name
 
 result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference const& type)
 {
-	if (IsParent(def, type.Type))
+	if (Schema().IsParent(def, type.Type))
 		return failure("cycle in base types");
 
 	if (type.Type)
@@ -138,19 +139,44 @@ result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference con
 	return success();
 }
 
+result<void, string> ValidateType(TypeReference const& type, function<result<void, string>(TypeReference const&)> subtype_validator)
+{
+	if (auto incomplete = subtype_validator(type); incomplete.has_error())
+		return failure(format("{}: {}", type.ToString(), incomplete.as_failure()));
 
-result<void, string> Database::ValidateFieldType(Fld def, TypeReference const& type)
+	if (type.TemplateArguments.size() < type.Type->TemplateParameters().size())
+		return failure(format("{}: invalid number of template arguments given", type.ToString()));
+
+	for (size_t i = 0; i < type.TemplateArguments.size(); ++i)
+	{
+		auto& arg = type.TemplateArguments[i];
+		auto& param = type.Type->TemplateParameters().at(i);
+		auto result = ValidateTemplateArgument(arg, param);
+		if (result.has_failure())
+			return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+		if (param.MustBeComplete())
+		{
+			if (auto ref = get_if<TypeReference>(&arg))
+			{
+				if (result = ValidateType(*ref, subtype_validator); result.has_failure())
+					return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
+			}
+		}
+	}
+	return success();
+}
+
+result<void, string> ValidateFieldType(FieldDefinition const* def, TypeReference const& type)
 {
 	if (!type.Type)
 		return failure("field type is invalid");
 
-	//if (type.Type->Name() == "void") return failure("field type cannot be void");
-
 	set<TypeDefinition const*> open_types;
 	open_types.insert(def->ParentRecord);
-	auto is_open = [&](TypeDefinition const* type) -> TypeDefinition const* {
+	auto is_open = [&](TypeReference const& type_ref) -> result<void, string> {
 		/// If the type itself is open
-		if (open_types.contains(type)) return type;
+		if (open_types.contains(type_ref.Type)) 
+			return failure(format("type is dependent on an incomplete type: {}", type_ref.Type->Name()));
 
 		/// If any base type is open
 		auto parent_type = type->BaseType().Type;
@@ -159,42 +185,16 @@ result<void, string> Database::ValidateFieldType(Fld def, TypeReference const& t
 			if (open_types.contains(parent_type))
 			{
 				/// For performance, insert all types up to the open base type into the open set
-				for (auto t = type; t != parent_type; t = t->BaseType().Type)
+				for (auto t = type_ref.Type; t != parent_type; t = t->BaseType().Type)
 					open_types.insert(t);
-				return parent_type;
+				return failure(format("type is dependent on an incomplete type: {}", parent_type->Name()));
 			}
 			parent_type = type->BaseType().Type;
-		}
-		return nullptr;
-	};
-
-	auto check_type = [](this auto& check_type, TypeReference const& type, auto& is_open) -> result<void, string> {
-		if (auto incomplete = is_open(type.Type))
-			return failure(format("{}: type is dependent on an incomplete type: {}", type.ToString(), incomplete->Name()));
-
-		if (type.TemplateArguments.size() < type.Type->TemplateParameters().size())
-			return failure(format("{}: invalid number of template arguments given", type.ToString()));
-
-		for (size_t i = 0; i < type.TemplateArguments.size(); ++i)
-		{
-			auto& arg = type.TemplateArguments[i];
-			auto& param = type.Type->TemplateParameters().at(i);
-			auto result = ValidateTemplateArgument(arg, param);
-			if (result.has_failure())
-				return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
-			if (param.MustBeComplete())
-			{
-				if (auto ref = get_if<TypeReference>(&arg))
-				{
-					if (result = check_type(*ref, is_open); result.has_failure())
-						return failure(format("{}: in template argument {}:\n{}", type.ToString(), i, move(result).error()));
-				}
-			}
 		}
 		return success();
 	};
 
-	return check_type(type, is_open);
+	return ValidateType(type, is_open);
 }
 
 

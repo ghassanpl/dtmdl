@@ -1,10 +1,10 @@
 #include "pch.h"
 
-#include "imgui.h"
-#include "imgui_stdlib.h"
-
 #include "Database.h"
 #include "Values.h"
+
+#include "imgui.h"
+#include "imgui_stdlib.h"
 
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
@@ -50,187 +50,39 @@ void DataStore::LogDataChange(json::json_pointer const& value_path, json const& 
 		cout << format("Data store '{}': '{}' changed from '{}' to '{}'\n", "...", value_path.to_string(), from.dump(), value.dump());
 }
 
-bool DataStore::EditVoid(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	if (!value.is_null())
-	{
-		auto issue = format("WARNING: The data stored in this value is not void (but '{}')", value.type_name());
-		TextColored({ 0,1,1,1 }, "%s", issue.c_str());
-		if (SmallButton("Reset Value"))
-		{
-			CheckError(InitializeValue(type, value));
-			if constexpr (log_changes)
-				LogDataChange(value_path, json{}, value);
-			return true;
-		}
-		return false;
-	}
-	Text("void");
-	return false;
-}
-
-template <typename JSON_TYPE, typename FUNC>
-bool DataStore::EditScalar(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path, FUNC&& func)
-{
-	bool edited = false;
-	json previous_val{};
-	if constexpr (log_changes)
-		previous_val = value;
-	PushID(&value);
-	if (auto ptr = value.get_ptr<JSON_TYPE*>())
-	{
-		edited = func(type, *ptr, field_attributes, value_path);
-	}
-	else
-	{
-		auto issue = format("WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(value.type()));
-		TextColored({ 0,1,1,1 }, "%s", issue.c_str());
-		if (SmallButton("Reset Value"))
-		{
-			CheckError(InitializeValue(type, value));
-			edited = true;
-		}
-	}
-
-	if constexpr (log_changes)
-	{
-		if (edited)
-			LogDataChange(value_path, previous_val, value);
-	}
-	PopID();
-	return edited;
-}
-
-#define EDIT(json_type) EditScalar<json::json_type>(type, value, field_attributes, value_path, [](TypeReference const& type, json::json_type& value, json const& field_attributes, json::json_pointer const& value_path) {
-#define EDITEND() }); return false;
-
-bool DataStore::EditF32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_float_t)
-		InputDouble("", &value, 0, 0, "%g");
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditF64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_float_t)
-		InputDouble("", &value, 0, 0, "%g");
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditI8(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{ 
-	EDIT(number_integer_t)
-		static constexpr json::number_integer_t min = std::numeric_limits<int8_t>::lowest();
-		static constexpr json::number_integer_t max = std::numeric_limits<int8_t>::max();
-		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditI16(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_integer_t)
-		static constexpr json::number_integer_t min = std::numeric_limits<int16_t>::lowest();
-		static constexpr json::number_integer_t max = std::numeric_limits<int16_t>::max();
-		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-bool DataStore::EditI32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_integer_t)
-		static constexpr json::number_integer_t min = std::numeric_limits<int32_t>::lowest();
-		static constexpr json::number_integer_t max = std::numeric_limits<int32_t>::max();
-		DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-bool DataStore::EditI64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_integer_t)
-		DragScalar("", ImGuiDataType_S64, &value);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditU8(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_unsigned_t)
-		static constexpr json::number_unsigned_t min = std::numeric_limits<uint8_t>::lowest();
-		static constexpr json::number_unsigned_t max = std::numeric_limits<uint8_t>::max();
-		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditU16(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_unsigned_t)
-		static constexpr json::number_unsigned_t min = std::numeric_limits<uint16_t>::lowest();
-		static constexpr json::number_unsigned_t max = std::numeric_limits<uint16_t>::max();
-		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-bool DataStore::EditU32(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_unsigned_t)
-		static constexpr json::number_unsigned_t min = std::numeric_limits<uint32_t>::lowest();
-		static constexpr json::number_unsigned_t max = std::numeric_limits<uint32_t>::max();
-		DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-bool DataStore::EditU64(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(number_unsigned_t)
-		DragScalar("", ImGuiDataType_U64, &value);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditBool(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(boolean_t)
-		return Checkbox("Value", &value);
-	EDITEND()
-}
-
-bool DataStore::EditString(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(string_t)
-		InputText("", &value);
-		return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditList(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path)
-{
-	EDIT(array_t)
-
-		return false;
-	//return IsItemDeactivatedAfterEdit();
-	EDITEND()
-}
-
-bool DataStore::EditBytes(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditFlags(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditArray(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditRef(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditOwn(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
-bool DataStore::EditVariant(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer const& value_path) { return false; }
 */
+
+template <typename T, bool CONST>
+struct add_const_if;
+
+template <typename T>
+struct add_const_if<T, true> { using type = std::add_const_t<T>; };
+template <typename T>
+struct add_const_if<T, false> { using type = T; };
+
+template <typename T, bool CONST>
+using add_const_if_t = typename add_const_if<T, CONST>::type;
+
+template <bool CONST>
+struct TValueDescriptor
+{
+	TypeReference const& Type;
+	add_const_if_t<json, CONST>& Value;
+	json const& Attributes;
+	json::json_pointer ValuePath;
+	add_const_if_t<DataStore, CONST>* Store = nullptr;
+};
+
+using ValueDescriptor = TValueDescriptor<false>;
+using ConstValueDescriptor = TValueDescriptor<true>;
 
 struct IBuiltInHandler
 {
 	virtual ~IBuiltInHandler() noexcept = default;
 
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const = 0;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const = 0;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const = 0;
+	virtual void View(ConstValueDescriptor const&) const = 0;
+	virtual bool Edit(ValueDescriptor const&) const = 0;
 	virtual bool Visit(json& value, VisitorFunc visitor) const = 0;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const = 0;
 };
@@ -244,186 +96,377 @@ struct IScalarHandler : IBuiltInHandler
 struct VoidHandler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mVoidHandler;
 
 struct F32Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mF32Handler;
 
 struct F64Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mF64Handler;
 
 struct I8Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mI8Handler;
 
 struct I16Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mI16Handler;
 
 struct I32Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mI32Handler;
 
 struct I64Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mI64Handler;
 
 struct U8Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mU8Handler;
 
 struct U16Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mU16Handler;
 
 struct U32Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mU32Handler;
 
 struct U64Handler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mU64Handler;
 
 struct BoolHandler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mBoolHandler;
 
 struct StringHandler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mStringHandler;
 
 struct BytesHandler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mBytesHandler;
 
 struct FlagsHandler : IScalarHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
-
-
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 } mFlagsHandler;
 
 struct ListHandler : IBuiltInHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 	virtual bool Visit(json& value, VisitorFunc visitor) const override;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
-
-
 } mListHandler;
 
 struct ArrayHandler : IBuiltInHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 	virtual bool Visit(json& value, VisitorFunc visitor) const override;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
-
-
 } mArrayHandler;
 
 struct RefHandler : IBuiltInHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 	virtual bool Visit(json& value, VisitorFunc visitor) const override;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
-
-
 } mRefHandler;
 
 struct OwnHandler : IBuiltInHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 	virtual bool Visit(json& value, VisitorFunc visitor) const override;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
-
-
 } mOwnHandler;
 
 struct VariantHandler : IBuiltInHandler
 {
 	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
-	virtual void View(TypeReference const& value_type, json const& value, json const& attributes, DataStore const* store = nullptr) const override;
-	virtual bool Edit(TypeReference const& value_type, json& value, json const& attributes, json::json_pointer path, DataStore* store = nullptr) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
 	virtual bool Visit(json& value, VisitorFunc visitor) const override;
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
-
-
 } mVariantHandler;
 
+template <typename JSON_TYPE, typename FUNC>
+bool EditScalar(ValueDescriptor const& descriptor, FUNC&& func)
+{
+	bool edited = false;
+	json previous_val{};
+	if (descriptor.Store)
+		previous_val = descriptor.Value;
+	ImGui::PushID(&descriptor.Value);
+	if (auto ptr = descriptor.Value.get_ptr<JSON_TYPE*>())
+	{
+		edited = func(*ptr, descriptor);
+	}
+	else
+	{
+		auto issue = format("WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(descriptor.Value.type()));
+		ImGui::TextColored({ 0,1,1,1 }, "%s", issue.c_str());
+		if (ImGui::SmallButton("Reset Value"))
+		{
+			CheckError(InitializeValue(descriptor.Type, descriptor.Value));
+			edited = true;
+		}
+	}
+
+	if (edited && descriptor.Store)
+	{
+		/// TODO: This LogDataChange(value_path, previous_val, value);
+	}
+	ImGui::PopID();
+	return edited;
+}
+
+bool F32Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_float_t>(descriptor, [](auto& value, auto& descriptor) {
+		ImGui::InputDouble("", &value, 0, 0, "%g");
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool F64Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_float_t>(descriptor, [](auto& value, auto& descriptor) {
+		ImGui::InputDouble("", &value, 0, 0, "%g");
+		return ImGui::IsItemDeactivatedAfterEdit();
+		});
+	return false;
+}
+
+bool I8Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_integer_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_integer_t min = std::numeric_limits<int8_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int8_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool I16Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_integer_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_integer_t min = std::numeric_limits<int16_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int16_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+bool I32Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_integer_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_integer_t min = std::numeric_limits<int32_t>::lowest();
+		static constexpr json::number_integer_t max = std::numeric_limits<int32_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_S64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+bool I64Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_integer_t>(descriptor, [](auto& value, auto& descriptor) {
+		ImGui::DragScalar("", ImGuiDataType_S64, &value);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool U8Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_unsigned_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint8_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint8_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool U16Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_unsigned_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint16_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint16_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+bool U32Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_unsigned_t>(descriptor, [](auto& value, auto& descriptor) {
+		static constexpr json::number_unsigned_t min = std::numeric_limits<uint32_t>::lowest();
+		static constexpr json::number_unsigned_t max = std::numeric_limits<uint32_t>::max();
+		ImGui::DragScalar("", ImGuiDataType_U64, &value, 1.0f, &min, &max, nullptr, ImGuiSliderFlags_AlwaysClamp);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+bool U64Handler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::number_unsigned_t>(descriptor, [](auto& value, auto& descriptor) {
+		ImGui::DragScalar("", ImGuiDataType_U64, &value);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool BoolHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::boolean_t>(descriptor, [](auto& value, auto& descriptor) {
+		return ImGui::Checkbox("Value", &value);
+	});
+	return false;
+}
+
+bool StringHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::string_t>(descriptor, [](auto& value, auto& descriptor) {
+		ImGui::InputText("", &value);
+		return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool VoidHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	if (!descriptor.Value.is_null())
+	{
+		auto issue = format("WARNING: The data stored in this value is not void (but '{}')", descriptor.Value.type_name());
+		ImGui::TextColored({ 0,1,1,1 }, "%s", issue.c_str());
+		if (ImGui::SmallButton("Reset Value"))
+		{
+			CheckError(InitializeValue(descriptor.Type, descriptor.Value));
+			/// TODO: if (descriptor.Store) LogDataChange(value_path, json{}, value);
+			return true;
+		}
+		return false;
+	}
+	ImGui::Text("void");
+	return false;
+}
+
+bool ListHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::array_t>(descriptor, [](auto& value, auto& descriptor) {
+
+		return false;
+	//return ImGui::IsItemDeactivatedAfterEdit();
+	});
+	return false;
+}
+
+bool ListHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+
+bool ListHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
+
+bool BytesHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+bool FlagsHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+bool ArrayHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+bool ArrayHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+bool ArrayHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
+bool RefHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+bool RefHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+bool RefHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
+bool OwnHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+bool OwnHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+bool OwnHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
+bool VariantHandler::Edit(ValueDescriptor const& descriptor) const { return false; }
+
+bool VariantHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+
+bool VariantHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
 
 result<void, string> VoidHandler::Initialize(TypeReference const& type, json& value) const { value = {}; return success(); }
 result<void, string> F32Handler::Initialize(TypeReference const& type, json& value) const { value = float{}; return success(); }
@@ -476,26 +519,26 @@ void Text(string_view str, ARGS&&... args)
 	ImGui::Text("%s", f.c_str());
 }
 
-void VoidHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("void"); }
-void F32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (float)value); }
-void F64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (double)value); }
-void I8Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int8_t)value); }
-void I16Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int16_t)value); }
-void I32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int32_t)value); }
-void I64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (int64_t)value); }
-void U8Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint8_t)value); }
-void U16Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint16_t)value); }
-void U32Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint32_t)value); }
-void U64Handler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (uint64_t)value); }
-void BoolHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (bool)value); }
-void StringHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("{}", (string_view)value); }
-void BytesHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<bytes>"); }
-void FlagsHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<flags>"); }
-void ListHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<list>"); }
-void ArrayHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<array>"); }
-void RefHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<ref>"); }
-void OwnHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<own>"); }
-void VariantHandler::View(TypeReference const& type, json const& value, json const& field_attributes, DataStore const* store) const { Text("<variant>"); }
+void VoidHandler::View(ConstValueDescriptor const& descriptor) const { Text("void"); }
+void F32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (float)descriptor.Value); }
+void F64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (double)descriptor.Value); }
+void I8Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int8_t)descriptor.Value); }
+void I16Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int16_t)descriptor.Value); }
+void I32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int32_t)descriptor.Value); }
+void I64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int64_t)descriptor.Value); }
+void U8Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint8_t)descriptor.Value); }
+void U16Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint16_t)descriptor.Value); }
+void U32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint32_t)descriptor.Value); }
+void U64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint64_t)descriptor.Value); }
+void BoolHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (bool)descriptor.Value); }
+void StringHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (string_view)descriptor.Value); }
+void BytesHandler::View(ConstValueDescriptor const& descriptor) const { Text("<bytes>"); }
+void FlagsHandler::View(ConstValueDescriptor const& descriptor) const { Text("<flags>"); }
+void ListHandler::View(ConstValueDescriptor const& descriptor) const { Text("<list>"); }
+void ArrayHandler::View(ConstValueDescriptor const& descriptor) const { Text("<array>"); }
+void RefHandler::View(ConstValueDescriptor const& descriptor) const { Text("<ref>"); }
+void OwnHandler::View(ConstValueDescriptor const& descriptor) const { Text("<own>"); }
+void VariantHandler::View(ConstValueDescriptor const& descriptor) const { Text("<variant>"); }
 
 map<string, IBuiltInHandler const*, less<>> const mBuiltIns = {
 	{"void", &mVoidHandler},
@@ -535,12 +578,12 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 		AddConversion(type_pair, [](json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
 			value = (B)(A)value;
 			return success();
-		});
+			});
 	};
 	auto AddConversionForEachPair = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>, auto && conversion_func) {
 		(conversion_func(type_identity<PAIRS>{}), ...);
 	};
-	auto AddConversionForTypeCrossProduct = [&]<typename... ELEMENTS1, typename... ELEMENTS2>(type_identity<tuple<ELEMENTS1...>>, type_identity<tuple<ELEMENTS2...>>, auto&& conversion_func) {
+	auto AddConversionForTypeCrossProduct = [&]<typename... ELEMENTS1, typename... ELEMENTS2>(type_identity<tuple<ELEMENTS1...>>, type_identity<tuple<ELEMENTS2...>>, auto && conversion_func) {
 		AddConversionForEachPair(type_identity<typename cross_product<tuple<ELEMENTS1...>, tuple<ELEMENTS2...>>::type>{}, conversion_func);
 	};
 	using numeric_type_list = tuple<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
@@ -553,7 +596,7 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 			value = ::std::to_string((A)value);
 			/// TODO: using to_chars would be faster
 			return success();
-		});
+			});
 	});
 
 	AddConversionForTypeCrossProduct(type_identity<tuple<string>>{}, type_identity<numeric_type_list>{}, [&]<typename A, typename B>(type_identity<pair<A, B>> type_pair) {
@@ -563,7 +606,7 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 			ignore = from_chars(to_address(begin(strref)), to_address(end(strref)), dest_value);
 			value = dest_value;
 			return success();
-		});
+			});
 	});
 
 	/// TODO: Add more conversions:
@@ -607,7 +650,7 @@ void ViewValue(TypeReference const& type, json& value, json const& field_attribu
 	switch (type.Type->Type())
 	{
 	case DefinitionType::BuiltIn:
-		mBuiltIns.at(type.Type->Name())->View(type, value, field_attributes, store);
+		mBuiltIns.at(type.Type->Name())->View({ type, value, field_attributes, json::json_pointer{}, store });
 		return;
 	case DefinitionType::Enum:
 		break;
@@ -631,7 +674,7 @@ bool EditValue(TypeReference const& type, json& value, json const& field_attribu
 	switch (type.Type->Type())
 	{
 	case DefinitionType::BuiltIn:
-		return mBuiltIns.at(type.Type->Name())->Edit(type, value, field_attributes, move(value_path), store);
+		return mBuiltIns.at(type.Type->Name())->Edit({ type, value, field_attributes, move(value_path), store });
 	case DefinitionType::Enum:
 		break;
 	case DefinitionType::Struct:

@@ -12,7 +12,6 @@ enum class DefinitionType
 };
 
 struct TypeDefinition;
-struct Database;
 struct Schema;
 
 struct TypeReference
@@ -108,6 +107,7 @@ struct TypeDefinition
 
 protected:
 
+	friend struct Schema;
 	friend struct Database;
 
 	bool mCompleted = false;
@@ -169,6 +169,7 @@ struct RecordDefinition : TypeDefinition
 
 protected:
 
+	friend struct Schema;
 	friend struct Database;
 
 	vector<unique_ptr<FieldDefinition>> mFields;
@@ -207,9 +208,9 @@ struct EnumeratorDefinition
 	string DescriptiveName;
 	json Attributes;
 
-	EnumeratorDefinition(EnumDefinition const* parent);
-	EnumeratorDefinition(EnumDefinition const* parent, json const& def);
-
+	EnumeratorDefinition(EnumDefinition const* parent, string name, int64_t value) : ParentEnum(parent), Name(name), Value(value), DescriptiveName(name) {}
+	EnumeratorDefinition(EnumDefinition const* parent, json const& def) : ParentEnum(parent) { FromJSON(def); }
+	
 	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"attributes", Attributes}}); }
 	void FromJSON(json const& value);
 
@@ -228,6 +229,7 @@ struct EnumDefinition : TypeDefinition
 
 protected:
 
+	friend struct Schema;
 	friend struct Database;
 
 	vector<unique_ptr<EnumeratorDefinition>> mEnumerators;
@@ -247,7 +249,7 @@ struct BuiltinDefinition : TypeDefinition
 
 protected:
 
-	friend struct Database;
+	friend struct Schema;
 
 	BuiltinDefinition(::Schema const& schema, string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
 		: TypeDefinition(schema, move(name), {}), mNativeEquivalent(move(native)), mMarkable(markable)
@@ -263,17 +265,35 @@ protected:
 
 struct Schema
 {
+	Schema();
+
 	auto Definitions() const noexcept { return mDefinitions | views::transform([](unique_ptr<TypeDefinition> const& element) -> TypeDefinition const* const { return element.get(); }); }
 
 	TypeDefinition const* ResolveType(string_view name) const;
+
+	BuiltinDefinition const* VoidType() const noexcept { return mVoid; }
 
 	/// TODO: These
 	size_t Version() const { return 1; }
 	size_t Hash() const { return 0; }
 
+	static bool IsParent(TypeDefinition const* parent, TypeDefinition const* potential_child);
+
 private:
 
+	template <typename T, typename... ARGS>
+	T const* AddType(ARGS&&... args)
+	{
+		auto ptr = unique_ptr<T>(new T{ *this, forward<ARGS>(args)... });
+		auto result = ptr.get();
+		mDefinitions.push_back(move(ptr));
+		return result;
+	}
+
+	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers);
+
 	vector<unique_ptr<TypeDefinition>> mDefinitions;
+	BuiltinDefinition const* mVoid = nullptr;
 
 	TypeDefinition* ResolveType(string_view name);
 

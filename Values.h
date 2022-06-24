@@ -1,10 +1,15 @@
 #pragma once
 
 struct DataStore;
+struct TypeReference;
 
 result<void, string> InitializeValue(TypeReference const& type, json& value);
+
 void ViewValue(TypeReference const& type, json& value, json const& field_attributes, DataStore const* store = nullptr);
+inline void ViewValue(TypeReference const& type, json& value) { ViewValue(type, value, empty_json, nullptr); }
+
 bool EditValue(TypeReference const& type, json& value, json const& field_attributes, json::json_pointer value_path, DataStore* store = nullptr);
+inline bool EditValue(TypeReference const& type, json& value) { return EditValue(type, value, empty_json, json::json_pointer{}, nullptr); }
 
 enum class [[nodiscard]] ConversionResult
 {

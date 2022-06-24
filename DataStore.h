@@ -21,9 +21,13 @@ struct DataStore
 	void DeleteType(string_view type_name);
 
 	bool HasValue(string_view name) const;
-	//void AddValue(json value);
+	void AddValue(string_view name, TypeReference const& type);
+	void DeleteValue(string_view name);
+	result<json, string> ExportValue(string_view name);
 
 	//void ForEveryRoot(function<bool(string_view, TypeReference const&, json&)>);
+
+	auto& Roots() { return mStorage.at("roots"); }
 
 private:
 

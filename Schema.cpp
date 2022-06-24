@@ -166,6 +166,21 @@ void RecordDefinition::FromJSON(json const& value)
 		mFields.push_back(make_unique<FieldDefinition>(this, field));
 }
 
+void FieldDefinition::FromJSON(json const& value)
+{
+	Name = value.at("name").get_ref<json::string_t const&>();
+	FieldType.FromJSON(ParentRecord->Schema(), value.at("type"));
+	Attributes = get(value, "attributes");
+}
+
+void EnumeratorDefinition::FromJSON(json const& value)
+{
+	Name = value.at("name").get_ref<json::string_t const&>();
+	Value = value.at("value");
+	DescriptiveName = value.at("descriptive").get_ref<json::string_t const&>();
+	Attributes = get(value, "attributes");
+}
+
 json TypeDefinition::ToJSON() const
 {
 	json result = json::object();
@@ -201,19 +216,42 @@ void TemplateParameter::FromJSON(json const& value)
 	string_ops::split(s, ",", [this](string_view s, bool) { Flags.set(magic_enum::enum_cast<TemplateParameterFlags>(s).value()); });
 }
 
-void FieldDefinition::FromJSON(json const& value)
+Schema::Schema()
 {
-	Name = value.at("name").get_ref<json::string_t const&>();
-	FieldType.FromJSON(Schema(), value.at("type"));
-	Attributes = get(value, "attributes");
-}
+	mVoid = AddNative("void", "::DataModel::NativeTypes::Void", {}, false, {});
+	AddNative("f32", "float", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
+	AddNative("f64", "double", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
+	AddNative("i8", "int8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("i16", "int16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("i32", "int32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("i64", "int64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("u8", "uint8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("u16", "uint16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("u32", "uint32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("u64", "uint64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
+	AddNative("bool", "bool", {}, false, { TemplateParameterQualifier::NotClass });
+	AddNative("string", "::DataModel::NativeTypes::String", {}, false, { TemplateParameterQualifier::NotClass });
+	AddNative("bytes", "::DataModel::NativeTypes::Bytes", {}, false, { TemplateParameterQualifier::NotClass });
+	auto flags = AddNative("flags", "::DataModel::NativeTypes::Flags", vector{
+		TemplateParameter{ "ENUM", TemplateParameterQualifier::Enum }
+		}, false, { TemplateParameterQualifier::NotClass });
+	auto list = AddNative("list", "::DataModel::NativeTypes::List", vector{
+		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass, TemplateParameterFlags::CanBeIncomplete }
+		}, true, { TemplateParameterQualifier::NotClass });
+	auto arr = AddNative("array", "::DataModel::NativeTypes::Array", vector{
+		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass },
+		TemplateParameter{ "SIZE", TemplateParameterQualifier::Size }
+		}, true, { TemplateParameterQualifier::NotClass });
+	auto ref = AddNative("ref", "::DataModel::NativeTypes::Ref", vector{
+		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
+		}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
+	auto own = AddNative("own", "::DataModel::NativeTypes::Own", vector{
+		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
+		}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
+	auto variant = AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
+		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
+		}, true, { TemplateParameterQualifier::NotClass });
 
-void EnumeratorDefinition::FromJSON(json const& value)
-{
-	Name = value.at("name").get_ref<json::string_t const&>();
-	Value = value.at("value");
-	DescriptiveName = value.at("descriptive").get_ref<json::string_t const&>();
-	Attributes = get(value, "attributes");
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
@@ -248,4 +286,25 @@ void EnumDefinition::FromJSON(json const& value)
 	auto& enumerators = value.at("enumerators").get_ref<json::array_t const&>();
 	for (auto& enumerator : enumerators)
 		mEnumerators.push_back(make_unique<EnumeratorDefinition>(this, enumerator));
+}
+
+
+BuiltinDefinition const* Schema::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
+{
+	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable, applicable_qualifiers);
+}
+
+bool Schema::IsParent(TypeDefinition const* parent, TypeDefinition const* potential_child)
+{
+	if ((parent && !parent->IsRecord()) || (potential_child && !potential_child->IsRecord()))
+		return false;
+
+	while (potential_child)
+	{
+		if (parent == potential_child)
+			return true;
+		potential_child = potential_child->mBaseType.Type;
+	}
+
+	return false;
 }

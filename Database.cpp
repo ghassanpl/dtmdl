@@ -4,7 +4,6 @@
 #include "Validation.h"
 
 #include <ghassanpl/wilson.h>
-
 #include <kubazip/zip/zip.h>
 
 string Describe(TypeUsedInFieldType const& usage)
@@ -27,7 +26,7 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 	/// Validation
 	
 	/// Schema Change
-	auto result = AddType<StructDefinition>(FreshName("Struct", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
+	auto result = mSchema.AddType<StructDefinition>(FreshName("Struct", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
 	if (!result)
 		return result;
 
@@ -48,7 +47,7 @@ result<EnumDefinition const*, string> Database::AddNewEnum()
 	/// Validation
 	
 	/// Schema Change
-	auto result = AddType<EnumDefinition>(FreshName("Enum", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
+	auto result = mSchema.AddType<EnumDefinition>(FreshName("Enum", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
 	if (!result)
 		return result;
 
@@ -70,7 +69,7 @@ result<void, string> Database::AddNewField(Rec def)
 
 	/// Schema Change
 	auto name = FreshName("Field", [def](string_view name) { return !!def->OwnOrBaseField(name); });
-	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name, TypeReference{ mVoid }));
+	mut(def)->mFields.push_back(make_unique<FieldDefinition>(def, name, TypeReference{ VoidType() }));
 
 	/// DataStore update
 	/// Adding a new field to a type should not change the data stores - we treat
@@ -118,8 +117,7 @@ result<void, string> Database::SetTypeName(Def def, string const& new_name)
 	AddChangeLog(json{ {"action", "SetTypeName"}, {"oldname", def->Name()}, {"newname", new_name } });
 
 	/// Schema Change
-	auto old_name = def->Name();
-	mut(def)->mName = new_name;
+	auto old_name = exchange(mut(def)->mName, new_name);
 
 	/// DataStore update
 	UpdateDataStores([&](DataStore& store) {
@@ -209,7 +207,7 @@ result<void, string> Database::MoveField(Rec from_record, string_view field_name
 	if (!from_record || !to_record)
 		throw invalid_argument("both records must be non-null");
 
-	if (!IsParent(from_record, to_record))
+	if (!Schema().IsParent(from_record, to_record))
 		return failure(format("record '{}' must a base type of record '{}'", from_record->Name(), to_record->Name()));
 
 	if (to_record->OwnField(field_name))
@@ -389,21 +387,6 @@ result<void, string> Database::DeleteType(Def type)
 	return success();
 }
 
-bool Database::IsParent(Def parent, Def potential_child)
-{
-	if ((parent && !parent->IsRecord()) || (potential_child && !potential_child->IsRecord()))
-		return false;
-
-	while (potential_child)
-	{
-		if (parent == potential_child)
-			return true;
-		potential_child = potential_child->mBaseType.Type;
-	}
-
-	return false;
-}
-
 Database::Database(filesystem::path dir)
 {
 	if (filesystem::exists(dir) && !filesystem::is_directory(dir))
@@ -417,40 +400,6 @@ Database::Database(filesystem::path dir)
 	mDirectory = canonical(move(dir));
 
 	mChangeLog.open(mDirectory / "changelog.wilson", ios::app|ios::out);
-
-	mVoid = AddNative("void", "::DataModel::NativeTypes::Void", {}, false, {});
-	AddNative("f32", "float", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
-	AddNative("f64", "double", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
-	AddNative("i8", "int8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i16", "int16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i32", "int32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i64", "int64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u8", "uint8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u16", "uint16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u32", "uint32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u64", "uint64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("bool", "bool", {}, false, { TemplateParameterQualifier::NotClass });
-	AddNative("string", "::DataModel::NativeTypes::String", {}, false, { TemplateParameterQualifier::NotClass });
-	AddNative("bytes", "::DataModel::NativeTypes::Bytes", {}, false, { TemplateParameterQualifier::NotClass });
-	auto flags = AddNative("flags", "::DataModel::NativeTypes::Flags", vector{
-		TemplateParameter{ "ENUM", TemplateParameterQualifier::Enum }
-	}, false, { TemplateParameterQualifier::NotClass });
-	auto list = AddNative("list", "::DataModel::NativeTypes::List", vector{
-		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass, TemplateParameterFlags::CanBeIncomplete }
-	}, true, { TemplateParameterQualifier::NotClass });
-	auto arr = AddNative("array", "::DataModel::NativeTypes::Array", vector{
-		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass },
-		TemplateParameter{ "SIZE", TemplateParameterQualifier::Size }
-	}, true, { TemplateParameterQualifier::NotClass });
-	auto ref = AddNative("ref", "::DataModel::NativeTypes::Ref", vector{
-		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
-	}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
-	auto own = AddNative("own", "::DataModel::NativeTypes::Own", vector{
-		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
-	}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
-	auto variant = AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
-		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
-	}, true, { TemplateParameterQualifier::NotClass });
 
 	AddFormatPlugin(make_unique<JSONSchemaFormat>());
 	AddFormatPlugin(make_unique<CppDeclarationFormat>());
@@ -538,11 +487,6 @@ void Database::LoadAll()
 	}
 }
 
-BuiltinDefinition const* Database::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
-{
-	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable, applicable_qualifiers);
-}
-
 void Database::UpdateDataStores(function<void(DataStore&)> update_func)
 {
 	for (auto& [name, store] : mDataStores)
@@ -591,9 +535,9 @@ void Database::LoadSchema(json const& from)
 		auto type_type = magic_enum::enum_cast<DefinitionType>(type.get_ref<json::string_t const&>()).value();
 		switch (type_type)
 		{
-		case DefinitionType::Class: AddType<ClassDefinition>(name); break;
-		case DefinitionType::Struct: AddType<StructDefinition>(name); break;
-		case DefinitionType::Enum: AddType<EnumDefinition>(name); break;
+		case DefinitionType::Class: mSchema.AddType<ClassDefinition>(name); break;
+		case DefinitionType::Struct: mSchema.AddType<StructDefinition>(name); break;
+		case DefinitionType::Enum: mSchema.AddType<EnumDefinition>(name); break;
 		default:
 			throw std::runtime_error(format("invalid type definition type: {}", type.get_ref<json::string_t const&>()));
 		}

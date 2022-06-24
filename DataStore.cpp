@@ -79,6 +79,26 @@ bool DataStore::HasValue(string_view name) const
 	return mStorage.at("roots").contains(name);
 }
 
+void DataStore::AddValue(string_view name, TypeReference const& type)
+{
+	mStorage.at("roots")[string{ name }] = json::object({ { "type", TypeReference{ mSchema.VoidType()}.ToJSON()}, {"value", json{}}});
+}
+
+void DataStore::DeleteValue(string_view name)
+{
+	auto& roots = Roots();
+	if (auto it = roots.find(name); it != roots.end())
+		roots.erase(it);
+}
+
+result<json, string> DataStore::ExportValue(string_view name)
+{
+	auto& roots = Roots();
+	if (auto it = roots.find(name); it != roots.end())
+		return success(*it);
+	return failure("no value found");
+}
+
 bool DataStore::ForEveryObjectWithTypeName(string_view type_name, function<bool(json&)> const& object_func)
 {
 	for (auto&& item : mStorage.at("roots").items())
