@@ -17,6 +17,10 @@ struct DataStore
 	bool HasFieldData(string_view record, string_view name) const;
 	void DeleteField(string_view record, string_view name);
 
+	void SetEnumeratorName(string_view enoom, string_view old_enumerator_name, string_view new_enumerator_name);
+	bool HasEnumeratorData(string_view enoom, string_view enumerator) const;
+	void DeleteEnumerator(string_view enoom, string_view enumerator);
+
 	bool HasTypeData(string_view type_name) const;
 	void DeleteType(string_view type_name);
 
@@ -33,6 +37,9 @@ private:
 
 	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json&)> const& object_func);
 	bool ForEveryObjectWithTypeName(string_view type_name, function<bool(json const&)> const& object_func) const;
+
+	bool ForEveryEnumValue(string_view enoom, function<bool(json const&)> const& object_func) const;
+	bool ForEveryEnumValue(string_view enoom, function<bool(json&)> const& object_func);
 
 	Schema const& mSchema;
 

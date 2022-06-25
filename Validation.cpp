@@ -115,6 +115,22 @@ result<void, string> Database::ValidateFieldName(Fld def, string const& new_name
 	return success();
 }
 
+result<void, string> Database::ValidateEnumeratorName(Enumerator def, string const& new_name)
+{
+	if (auto result = ValidateIdentifierName(new_name); result.has_error())
+		return result;
+
+	auto rec = def->ParentEnum;
+	for (auto& e : rec->mEnumerators)
+	{
+		if (e.get() == def)
+			continue;
+		if (e->Name == new_name)
+			return failure("an enumerator with that name already exists");
+	}
+	return success();
+}
+
 result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference const& type)
 {
 	if (Schema().IsParent(def, type.Type))

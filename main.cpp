@@ -71,22 +71,34 @@ void OpenModal(ARGS&&... args)
 
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ValidateFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
+
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using EditorFunc = function<void(EDITING_OBJECT, OBJECT_PROPERTY&)>;
+
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ApplyFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
+
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using GetterFunc = function<OBJECT_PROPERTY(EDITING_OBJECT)>;
+
+template <typename EDITING_OBJECT>
+using DisplayFunc = function<void(EDITING_OBJECT)>;
 
 void Display(string const& val) { ImGui::Text("%s", val.c_str()); }
 void Display(TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
 
 template <typename E, typename P>
-bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> validate, EditorFunc<E, P> editor, ApplyFunc<E, P> apply, GetterFunc<E, P> getter)
+bool GenericEditor(const char* id, Database& db, E def, 
+	ValidateFunc<E, P> validate, 
+	EditorFunc<E, P> editor, 
+	ApplyFunc<E, P> apply, 
+	GetterFunc<E, P> getter, 
+	DisplayFunc<E> display = {}) /// TODO: reset ?
 {
 	bool changed = false;
 	using namespace ImGui;
-	static map<E, P> is_editing;
+	static map<string, map<E, P>, less<>> is_editing_map;
+	auto& is_editing = is_editing_map[id];
 	PushID(id);
 	PushID(def);
 
@@ -129,10 +141,16 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 	}
 	else
 	{
-		decltype(auto) val = getter(def);
-		Display(val); SameLine();
+		if (display)
+			display(def);
+		else
+		{
+			decltype(auto) val = getter(def);
+			Display(val);
+		}
+		SameLine();
 		if (SmallButton("Edit"))
-			is_editing[def] = val;
+			is_editing[def] = getter(def);
 	}
 
 	PopID();
@@ -140,6 +158,7 @@ bool GenericEditor(const char* id, Database& db, E def, ValidateFunc<E, P> valid
 	return changed;
 }
 
+/// TODO: Move this away from depending on Database& db
 bool TypeNameEditor(Database& db, TypeDefinition const* def)
 {
 	return GenericEditor<TypeDefinition const*, string>("Type Name", db, def,
@@ -151,6 +170,98 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 		},
 		bind_front(&Database::SetTypeName, &db),
 		[](TypeDefinition const* def) -> auto const& { return def->Name(); }
+	);
+}
+
+bool EnumeratorNameEditor(Database& db, EnumeratorDefinition const* def)
+{
+	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Name", db, def,
+		bind_front(&Database::ValidateEnumeratorName, &db),
+		[](EnumeratorDefinition const* def, string& name) {
+			using namespace ImGui;
+			SetNextItemWidth(GetContentRegionAvail().x);
+			InputText("###enumeratorname", &name);
+		},
+		bind_front(&Database::SetEnumeratorName, &db),
+		[](EnumeratorDefinition const* def) -> auto const& { return def->Name; }
+	);
+}
+
+bool EnumeratorValueEditor(Database& db, EnumeratorDefinition const* def)
+{
+	bool changed = false;
+	using namespace ImGui;
+
+	PushID("Enumerator Value");
+	PushID(def);
+
+	static map<EnumeratorDefinition const*, int64_t> is_editing;
+
+	if (auto it = is_editing.find(def); it != is_editing.end())
+	{
+		using namespace ImGui;
+		SetNextItemWidth(GetContentRegionAvail().x);
+		InputScalar("###enumeratorvalue", ImGuiDataType_S64, &it->second);
+
+		if (SmallButton("Apply"))
+		{
+			CheckError(db.SetEnumeratorValue(def, it->second));
+			is_editing.erase(def);
+			changed = true;
+		}
+		SameLine();
+		if (SmallButton("Reset"))
+		{
+			CheckError(db.SetEnumeratorValue(def, nullopt));
+			is_editing.erase(def);
+			changed = true;
+		}
+		SameLine();
+		if (SmallButton("Cancel"))
+			is_editing.erase(def);
+	}
+	else
+	{
+		auto actual = def->ActualValue();
+		if (!def->Value.has_value())
+			ImGui::TextDisabled("%lli", actual);
+		else
+			ImGui::Text("%lli", actual);
+		SameLine();
+		if (SmallButton("Edit"))
+			is_editing[def] = actual;
+		if (def->Value.has_value())
+		{
+			if (SmallButton("Reset"))
+			{
+				CheckError(db.SetEnumeratorValue(def, nullopt));
+				changed = true;
+			}
+		}
+	}
+
+	PopID();
+	PopID();
+	return changed;
+}
+
+bool EnumeratorDescriptiveNameEditor(Database& db, EnumeratorDefinition const* def)
+{
+	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Descriptive Name", db, def,
+		[](EnumeratorDefinition const* def, string const& value) -> result<void, string> { return success(); },
+		[](EnumeratorDefinition const* def, string& name) {
+			using namespace ImGui;
+			SetNextItemWidth(GetContentRegionAvail().x);
+			InputTextWithHint("###enumeratordescname", def->Name.c_str(), &name);
+		},
+		bind_front(&Database::SetEnumeratorDescriptiveName, &db),
+		[](EnumeratorDefinition const* def) -> auto const& { return def->DescriptiveName; },
+		[](EnumeratorDefinition const* def) { 
+			if (def->DescriptiveName.empty())
+				ImGui::TextDisabled("%s", def->Name.c_str());
+			else
+				ImGui::Text("%s", def->DescriptiveName.c_str());
+		}
 	);
 }
 
@@ -410,7 +521,6 @@ result<void, string> ApplyChangeOption(Database& db, TypeHasDataInDataStore cons
 	return success();
 }
 
-
 struct DeleteFieldModal : IModal
 {
 	Database& mDB;
@@ -439,7 +549,7 @@ struct DeleteFieldModal : IModal
 		size_t i = 0;
 		for (auto& store : mStores)
 		{
-			BulletText("Storage '': ");
+			BulletText("Storage '{}': ", store.c_str());
 			SameLine();
 			Checkbox("Make data backup", (bool*)&mSettings[i]);
 			i++;
@@ -457,6 +567,57 @@ struct DeleteFieldModal : IModal
 	virtual string WindowName() const override
 	{
 		return "Deleting Field";
+	}
+};
+
+struct DeleteEnumeratorModal : IModal
+{
+	Database& mDB;
+	EnumeratorDefinition const* mEnumerator;
+	vector<string> mStores;
+	vector<char> mSettings;
+	bool mMakeBackup = true;
+
+	DeleteEnumeratorModal(Database& db, EnumeratorDefinition const* def, vector<string> stores_with_data)
+		: mDB(db)
+		, mEnumerator(def)
+		, mStores(move(stores_with_data))
+		, mSettings(mStores.size(), false)
+	{
+
+	}
+
+	virtual void Do() override
+	{
+		using namespace ImGui;
+
+		auto text = format("You are trying to delete the enumerator '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mEnumerator->ParentEnum->Name(), mEnumerator->Name, mStores.size());
+
+		Text("%s", text.c_str());
+
+		size_t i = 0;
+		for (auto& store : mStores)
+		{
+			BulletText("Storage '{}': ", store.c_str());
+			SameLine();
+			Checkbox("Make data backup", (bool*)&mSettings[i]);
+			i++;
+		}
+
+		if (Button("Proceed with Changes"))
+		{
+			Close = true;
+		}
+		SameLine();
+		if (Button("Cancel Changes"))
+			Close = true;
+			
+	}
+
+
+	virtual string WindowName() const override
+	{
+		return "Deleting Enumerator";
 	}
 };
 
@@ -686,7 +847,6 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 
 void EditEnum(Database& db, EnumDefinition const* enoom)
 {
-	/*
 	using namespace ImGui;
 	Text("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
@@ -715,55 +875,45 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 		TableNextRow();
 		size_t index = 0;
-		for (auto& enumerator : enoom->Enumerators())
+		for (auto enumerator : enoom->Enumerators())
 		{
 			PushID(index);
 
 			TableNextColumn();
 			SetNextItemWidth(GetContentRegionAvail().x);
-			FieldNameEditor(db, field);
+			EnumeratorNameEditor(db, enumerator);
 			TableNextColumn();
 			SetNextItemWidth(GetContentRegionAvail().x);
-			FieldTypeEditor(db, field);
+			EnumeratorValueEditor(db, enumerator);
 			TableNextColumn();
-			Text("Initial Value");
+			SetNextItemWidth(GetContentRegionAvail().x);
+			EnumeratorDescriptiveNameEditor(db, enumerator);
 			TableNextColumn();
 			Text("Attributes");
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
 			if (SmallButton("Up"))
-				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
+				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index - 1)); });
 			EndDisabled();
 			SameLine();
 
-			BeginDisabled(index == def->Fields().size() - 1);
+			BeginDisabled(index == enoom->Enumerators().size() - 1);
 			if (SmallButton("Down"))
-				LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
+				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index + 1)); });
 			EndDisabled();
 			SameLine();
 
 			SmallButton("Duplicate"); SameLine();
 			SmallButton("Copy"); SameLine();
 			SmallButton("Delete");
-			if (BeginPopupContextItem("Are you sure you want to delete this field?", 0))
-			{
-				Text("Are you sure you want to delete this field?");
-				if (Button("Yes"))
-				{
-					auto usages = db.StoresWithFieldData(field);
-					if (usages.empty())
-						LateExec.push_back([&db, field] { CheckError(db.DeleteField(field)); });
-					else
-						OpenModal<DeleteFieldModal>(db, field, move(usages));
-
-					CloseCurrentPopup();
-				}
-				SameLine();
-				if (Button("No"))
-					CloseCurrentPopup();
-				EndPopup();
-			}
+			DoConfirmUI("Are you sure you want to delete this enumerator?", [&db, enumerator]() {
+				auto usages = db.StoresWithEnumeratorData(enumerator);
+				if (usages.empty())
+					LateExec.push_back([&db, enumerator] { CheckError(db.DeleteEnumerator(enumerator)); });
+				else
+					OpenModal<DeleteEnumeratorModal>(db, enumerator, move(usages));
+			});
 
 			PopID();
 			index++;
@@ -771,7 +921,6 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 		EndTable();
 	}
-	*/
 }
 
 Database mDatabase{ "test/db1/" };

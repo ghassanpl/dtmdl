@@ -79,7 +79,19 @@ TypeReference::TypeReference(Schema const& schema, json const& val)
 	FromJSON(schema, val);
 }
 
-TypeReference::TypeReference(TypeDefinition const* value) noexcept : Type(value), TemplateArguments(value ? value->TemplateParameters().size() : 0) { }
+TypeReference::TypeReference(TypeDefinition const* value, vector<TemplateArgument> args)
+	: Type(value)
+	, TemplateArguments(move(args))
+{
+	if (value && value->TemplateParameters().size() > TemplateArguments.size())
+		throw runtime_error(format("invalid number of arguments for type '{}': expected {}, got {}", value->Name(), value->TemplateParameters().size(), TemplateArguments.size()));
+}
+
+TypeReference::TypeReference(TypeDefinition const* value) noexcept 
+	: Type(value)
+	, TemplateArguments(value ? value->TemplateParameters().size() : 0)
+{
+}
 
 FieldDefinition const* RecordDefinition::Field(size_t index) const
 {
@@ -173,10 +185,27 @@ void FieldDefinition::FromJSON(json const& value)
 	Attributes = get(value, "attributes");
 }
 
+int64_t EnumeratorDefinition::ActualValue() const
+{
+	int64_t current = 0;
+	for (auto e : ParentEnum->Enumerators())
+	{
+		current = e->Value.value_or(current);
+		if (e == this)
+			return current;
+		++current;
+	}
+	throw "what";
+}
+
 void EnumeratorDefinition::FromJSON(json const& value)
 {
 	Name = value.at("name").get_ref<json::string_t const&>();
-	Value = value.at("value");
+	json const& v = value.at("value");
+	if (v.is_null())
+		Value = nullopt;
+	else
+		Value = int64_t(v);
 	DescriptiveName = value.at("descriptive").get_ref<json::string_t const&>();
 	Attributes = get(value, "attributes");
 }
@@ -268,6 +297,31 @@ TypeDefinition* Schema::ResolveType(string_view name)
 		if (def->Name() == name)
 			return def.get();
 	return nullptr;
+}
+
+EnumeratorDefinition const* EnumDefinition::Enumerator(size_t index) const
+{
+	if (index >= mEnumerators.size())
+		return nullptr;
+	return mEnumerators[index].get();
+}
+
+EnumeratorDefinition const* EnumDefinition::Enumerator(string_view name) const
+{
+	for (auto& e : mEnumerators)
+	{
+		if (e->Name == name)
+			return e.get();
+	}
+	return nullptr;
+}
+
+size_t EnumDefinition::EnumeratorIndexOf(EnumeratorDefinition const* field) const
+{
+	for (size_t i = 0; i < mEnumerators.size(); ++i)
+		if (mEnumerators[i].get() == field)
+			return i;
+	return -1;
 }
 
 json EnumDefinition::ToJSON() const

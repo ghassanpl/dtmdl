@@ -29,3 +29,9 @@ using ConstVisitorFunc = function<bool(TypeReference const&, json::json_pointer,
 
 [[nodiscard]] bool ForEveryObjectWithTypeName(TypeReference const& value_type, json& value, string_view type_name, function<bool(json&)> const& object_func);
 [[nodiscard]] bool ForEveryObjectWithTypeName(TypeReference const& value_type, json const& value, string_view type_name, function<bool(json const&)> const& object_func);
+
+[[nodiscard]] bool ForEveryObjectWithType(TypeReference const& value_type, json& value, TypeReference const& searched_type, function<bool(json&)> const& object_func);
+[[nodiscard]] bool ForEveryObjectWithType(TypeReference const& value_type, json const& value, TypeReference const& searched_type, function<bool(json const&)> const& object_func);
+
+[[nodiscard]] bool ForEveryObjectWithType(TypeReference const& value_type, json& value, json const& serialized_type, function<bool(json&)> const& object_func);
+[[nodiscard]] bool ForEveryObjectWithType(TypeReference const& value_type, json const& value, json const& serialized_type, function<bool(json const&)> const& object_func);

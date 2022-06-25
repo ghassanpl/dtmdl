@@ -827,3 +827,59 @@ bool ForEveryObjectWithTypeName(TypeReference const& type, json const& value, st
 
 	return visitor(type, json::json_pointer{}, value);
 }
+
+bool ForEveryObjectWithType(TypeReference const& value_type, json& value, TypeReference const& searched_type, function<bool(json&)> const& object_func)
+{
+	VisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json& child_value) {
+		if (child_type == searched_type)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(child_type, child_value, visitor);
+	};
+
+	return visitor(value_type, json::json_pointer{}, value);
+}
+
+bool ForEveryObjectWithType(TypeReference const& value_type, json const& value, TypeReference const& searched_type, function<bool(json const&)> const& object_func)
+{
+	ConstVisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json const& child_value) {
+		if (child_type == searched_type)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(child_type, child_value, visitor);
+	};
+
+	return visitor(value_type, json::json_pointer{}, value);
+}
+
+bool ForEveryObjectWithType(TypeReference const& value_type, json& value, json const& serialized_type, function<bool(json&)> const& object_func)
+{
+	VisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json& child_value) {
+		if (child_type.ToJSON() == serialized_type)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(child_type, child_value, visitor);
+	};
+
+	return visitor(value_type, json::json_pointer{}, value);
+}
+
+bool ForEveryObjectWithType(TypeReference const& value_type, json const& value, json const& serialized_type, function<bool(json const&)> const& object_func)
+{
+	ConstVisitorFunc visitor = [&](TypeReference const& child_type, json::json_pointer index, json const& child_value) {
+		if (child_type.ToJSON() == serialized_type)
+		{
+			if (object_func(child_value))
+				return true;
+		}
+		return VisitValue(child_type, child_value, visitor);
+	};
+
+	return visitor(value_type, json::json_pointer{}, value);
+}

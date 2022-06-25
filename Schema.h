@@ -30,6 +30,7 @@ struct TypeReference
 	bool operator==(TypeReference const& other) const noexcept = default;
 
 	explicit TypeReference(TypeDefinition const* value) noexcept;
+	explicit TypeReference(TypeDefinition const* value, vector<variant<uint64_t, TypeReference>> args);
 
 	TypeDefinition const* operator->() const { return Type; }
 
@@ -200,32 +201,51 @@ protected:
 
 struct EnumDefinition;
 
+inline json ToJSON(optional<int64_t> const& val)
+{
+	if (val.has_value())
+		return json{ val.value() };
+	return json{};
+}
+
 struct EnumeratorDefinition
 {
 	EnumDefinition const* ParentEnum = nullptr;
 	string Name;
-	int64_t Value{};
+	optional<int64_t> Value{};
 	string DescriptiveName;
 	json Attributes;
 
-	EnumeratorDefinition(EnumDefinition const* parent, string name, int64_t value) : ParentEnum(parent), Name(name), Value(value), DescriptiveName(name) {}
+	EnumeratorDefinition(EnumDefinition const* parent, string name, optional<int64_t> value) : ParentEnum(parent), Name(name), Value(value) {}
 	EnumeratorDefinition(EnumDefinition const* parent, json const& def) : ParentEnum(parent) { FromJSON(def); }
+
+	int64_t ActualValue() const;
 	
-	json ToJSON() const { return json::object({ {"name", Name }, {"value", Value}, {"descriptive", DescriptiveName}, {"attributes", Attributes}}); }
+	json ToJSON() const { return json::object({ {"name", Name }, {"value", ::ToJSON(Value)}, {"descriptive", DescriptiveName}, {"attributes", Attributes}}); }
 	void FromJSON(json const& value);
 
-	string ToString() const { return format("{} = {}; /// {} /// {}", Name, Value, DescriptiveName, Attributes.dump()); }
+	string ToString() const { 
+		if (Value.has_value())
+			return format("{} = {}, /// {} /// {}", Name, Value.value(), DescriptiveName, Attributes.dump());
+		else
+			return format("{}, /// {} /// {}", Name, DescriptiveName, Attributes.dump()); 
+	}
 };
 
 struct EnumDefinition : TypeDefinition
 {
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Enum; }
-	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
+
+	EnumeratorDefinition const* Enumerator(size_t i) const;
+	EnumeratorDefinition const* Enumerator(string_view name) const;
+	size_t EnumeratorIndexOf(EnumeratorDefinition const* field) const;
+
+	auto DefaultEnumerator() const { return Enumerator(0); }
 
 	virtual json ToJSON() const override;
 	virtual void FromJSON(json const& value) override;
 
-	auto const& Enumerators() const noexcept { return mEnumerators; }
+	auto Enumerators() const noexcept { return mEnumerators | views::transform([](unique_ptr<EnumeratorDefinition> const& element) -> EnumeratorDefinition const* const { return element.get(); }); }
 
 protected:
 
@@ -270,6 +290,8 @@ struct Schema
 	auto Definitions() const noexcept { return mDefinitions | views::transform([](unique_ptr<TypeDefinition> const& element) -> TypeDefinition const* const { return element.get(); }); }
 
 	TypeDefinition const* ResolveType(string_view name) const;
+	template <typename T>
+	T const* ResolveType(string_view name) const { return dynamic_cast<T const*>(ResolveType(name)); }
 
 	BuiltinDefinition const* VoidType() const noexcept { return mVoid; }
 

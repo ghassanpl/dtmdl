@@ -51,11 +51,104 @@ result<EnumDefinition const*, string> Database::AddNewEnum()
 	if (!result)
 		return result;
 
+	/// Add a single enumerator by default - every enum MUST have at least a single enum
+	mut(result)->mEnumerators.push_back(make_unique<EnumeratorDefinition>(result, "Default", nullopt));
+
 	/// DataStore update (v2)
 	/// Adding a new type should not change the data stores
 
 	/// ChangeLog add
 	AddChangeLog(json{ {"action", "AddNewEnum"}, {"name", result->Name()} });
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::AddNewEnumerator(Enum def)
+{
+	/// Validation
+
+	/// Schema Change
+	auto name = FreshName("Enumerator", [def](string_view name) { return !!def->Enumerator(name); });
+	mut(def)->mEnumerators.push_back(make_unique<EnumeratorDefinition>(def, name, nullopt));
+
+	/// DataStore update (v2)
+	/// Adding a new enumerator (at the end) should not change the data stores
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "AddNewEnumreator"}, {"enum", def->Name()}, {"enumeratorname", name}});
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::SwapEnumerators(Enum def, size_t enum_index_a, size_t enum_index_b)
+{
+	/// Validation
+	if (enum_index_a >= def->mEnumerators.size()) return failure(format("enumerator #{} of enum {} does not exist", enum_index_a, def->Name()));
+	if (enum_index_b >= def->mEnumerators.size()) return failure(format("enumerator #{} of enum {} does not exist", enum_index_b, def->Name()));
+
+	/// Schema Change
+	swap(mut(def)->mEnumerators[enum_index_a], mut(def)->mEnumerators[enum_index_b]);
+
+	/// DataStore update
+	/// No need to update datastore, it doesn't care about enumerator order
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SwapEnumerators"}, {"record", def->Name()}, {"enumerator_a", enum_index_a}, {"enumerator_b", enum_index_b} });
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::DeleteEnumerator(Enumerator def)
+{
+	/// Validation
+	if (def->ParentEnum->Enumerators().size() == 1)
+		return failure("enum must have at least one enumerator");
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "DeleteEnumerator"}, {"enum", def->ParentEnum->Name()}, {"enumerator", def->Name}, {"backup", ToJSON(def->Value) } });
+
+	/// DataStore update
+	UpdateDataStores([&](DataStore& store) {
+		store.DeleteEnumerator(def->ParentEnum->Name(), def->Name);
+	});
+
+	/// Schema Change
+	auto index = def->ParentEnum->EnumeratorIndexOf(def);
+	mut(def->ParentEnum)->mEnumerators.erase(def->ParentEnum->mEnumerators.begin() + index);
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::SetEnumeratorName(Enumerator def, string const& new_name)
+{
+	/// Validation
+	auto result = ValidateEnumeratorName(def, new_name);
+	if (result.has_error())
+		return result;
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetEnumeratorName"}, {"enum", def->ParentEnum->Name()}, {"oldname", def->Name}, {"newname", new_name} });
+
+	/// Schema Change
+	auto old_name = def->Name;
+	mut(def)->Name = new_name;
+
+	/// DataStore update
+	UpdateDataStores([&](DataStore& store) {
+		store.SetEnumeratorName(def->ParentEnum->Name(), old_name, new_name);
+	});
 
 	/// Save
 	SaveAll();
@@ -353,6 +446,57 @@ vector<string> Database::StoresWithFieldData(Fld field) const
 			| views::transform([](auto& kvp) { return kvp.first; }),
 		back_inserter(result));
 	return result;
+}
+
+vector<string> Database::StoresWithEnumeratorData(Enumerator field) const
+{
+	vector<string> result;
+	ranges::copy(
+		mDataStores
+		| views::filter([field](auto& kvp) { return kvp.second.HasEnumeratorData(field->ParentEnum->Name(), field->Name); })
+		| views::transform([](auto& kvp) { return kvp.first; }),
+		back_inserter(result));
+	return result;
+}
+
+result<void, string> Database::SetEnumeratorDescriptiveName(Enumerator def, string const& new_name)
+{
+	/// Validation
+	/// Setting an enumerator descriptive name should always be allowed (right?)
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetEnumeratorDescriptiveName"},  {"enum", def->ParentEnum->Name()}, {"enumerator", def->Name}, {"backup", def->Name } });
+
+	/// DataStore update
+	/// No need to update store since we're storing the values by name 
+
+	/// Schema Change
+	mut(def)->DescriptiveName = new_name;
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
+result<void, string> Database::SetEnumeratorValue(Enumerator def, optional<int64_t> value)
+{
+	/// Validation
+	/// Setting an enumerator value should always be allowed (right?)
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetEnumeratorValue"},  {"enum", def->ParentEnum->Name()}, {"enumerator", def->Name}, {"backup", ToJSON(value) }});
+
+	/// DataStore update
+	/// No need to update store since we're storing the values by name 
+
+	/// Schema Change
+	mut(def)->Value = value;
+
+	/// Save
+	SaveAll();
+
+	return success();
 }
 
 result<void, string> Database::DeleteType(Def type)

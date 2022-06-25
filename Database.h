@@ -33,6 +33,8 @@ struct Database
 	using Def = TypeDefinition const*;
 	using Rec = RecordDefinition const*;
 	using Fld = FieldDefinition const*;
+	using Enum = EnumDefinition const*;
+	using Enumerator = EnumeratorDefinition const*;
 
 	auto Definitions() const noexcept { return mSchema.Definitions(); }
 
@@ -48,19 +50,21 @@ struct Database
 	result<void, string> ValidateRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> ValidateTypeName(Def def, string const& new_name);
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
+	result<void, string> ValidateEnumeratorName(Enumerator def, string const& new_name);
 
 	vector<TypeUsage> LocateTypeUsages(Def type) const;
 
 	vector<string> StoresWithFieldData(Fld field) const;
+	vector<string> StoresWithEnumeratorData(Enumerator field) const;
 
 	/// Actions
 
+	result<void, string> SetTypeName(Def def, string const& new_name);
+
 	result<StructDefinition const*, string> AddNewStruct();
-	result<EnumDefinition const*, string> AddNewEnum();
 	result<void, string> AddNewField(Rec def);
 
 	result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);
-	result<void, string> SetTypeName(Def def, string const& new_name);
 	result<void, string> SetFieldName(Fld def, string const& new_name);
 	result<void, string> SetFieldType(Fld def, TypeReference const& type);
 
@@ -71,12 +75,19 @@ struct Database
 		AssumingNotEqual(field_a->ParentRecord, field_b->ParentRecord);
 		return SwapFields(field_a->ParentRecord, field_a->ParentRecord->FieldIndexOf(field_a), field_b->ParentRecord->FieldIndexOf(field_b));
 	}
-
 	result<void, string> MoveField(Rec from_record, string_view field_name, Rec to_record);
-
 	result<void, string> CopyFieldsAndMoveUpBaseTypeHierarchy(Rec def);
 
 	result<void, string> DeleteField(Fld def);
+
+	result<EnumDefinition const*, string> AddNewEnum();
+	result<void, string> AddNewEnumerator(Enum def);
+	result<void, string> SwapEnumerators(Enum def, size_t enum_index_a, size_t enum_index_b);
+	result<void, string> DeleteEnumerator(Enumerator def);
+	result<void, string> SetEnumeratorName(Enumerator def, string const& new_name);
+	result<void, string> SetEnumeratorDescriptiveName(Enumerator def, string const& new_name);
+	result<void, string> SetEnumeratorValue(Enumerator def, optional<int64_t> value);
+
 	result<void, string> DeleteType(Def type);
 
 	/// Database Operations
