@@ -6,6 +6,8 @@
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
+void Label(string_view s);
+
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
 struct concat<tuple<Ts...>, tuple<Us...>>
@@ -403,7 +405,7 @@ bool VoidHandler::Edit(ValueDescriptor const& descriptor) const
 		}
 		return false;
 	}
-	ImGui::Text("void");
+	Label("void");
 	return false;
 }
 
@@ -516,10 +518,10 @@ template <typename... ARGS>
 void Text(string_view str, ARGS&&... args)
 {
 	auto f = vformat(str, make_format_args(forward<ARGS>(args)...));
-	ImGui::Text("%s", f.c_str());
+	Label(f);
 }
 
-void VoidHandler::View(ConstValueDescriptor const& descriptor) const { Text("void"); }
+void VoidHandler::View(ConstValueDescriptor const& descriptor) const { Label("void"); }
 void F32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (float)descriptor.Value); }
 void F64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (double)descriptor.Value); }
 void I8Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int8_t)descriptor.Value); }

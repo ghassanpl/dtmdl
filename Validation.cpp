@@ -3,7 +3,7 @@
 #include "Validation.h"
 #include "Database.h"
 
-static string_view cpp_keywords[] = {
+static set<string_view> cpp_keywords = {
 	"alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case", "catch", "char", "char8_t",
 	"char16_t", "char32_t", "class", "compl", "concept", "const", "consteval", "constexpr", "constinit", "const_cast", "continue",
 	"co_await", "co_return", "co_yield", "decltype", "default", "delete", "do", "double", "dynamic_cast", "else", "enum", "explicit",
@@ -22,7 +22,7 @@ result<void, string> ValidateIdentifierName(string_view new_name)
 		return failure("name must start with a letter or underscore");
 	if (!ranges::all_of(new_name, string_ops::ascii::isident))
 		return failure("name must contain only letters, numbers, or underscores");
-	if (ranges::find(cpp_keywords, new_name) != ranges::end(cpp_keywords))
+	if (cpp_keywords.contains(new_name))
 		return failure("name cannot be a C++ keyword");
 	if (new_name.find("__") != string::npos)
 		return failure("name cannot contain two consecutive underscores (__)");

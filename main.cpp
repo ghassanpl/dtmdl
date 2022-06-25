@@ -26,6 +26,11 @@ struct IModal
 	bool Close = false;
 };
 
+void Label(string_view s)
+{
+	ImGui::TextUnformatted(s.data(), s.data() + s.size());
+}
+
 /// TODO: Icons for Error and Success modals
 struct ErrorModal : IModal
 {
@@ -34,7 +39,7 @@ struct ErrorModal : IModal
 	virtual void Do() override
 	{
 		if (auto str = get_if<string>(&Message))
-			ImGui::Text("%s", str->c_str());
+			Label(*str);
 		else
 			get<1>(Message)();
 		ImGui::Spacing();
@@ -51,7 +56,7 @@ struct SuccessModal : IModal
 	virtual void Do() override
 	{
 		if (auto str = get_if<string>(&Message))
-			ImGui::Text("%s", str->c_str());
+			Label(*str);
 		else
 			get<1>(Message)();
 		ImGui::Spacing();
@@ -84,15 +89,15 @@ using GetterFunc = function<OBJECT_PROPERTY(EDITING_OBJECT)>;
 template <typename EDITING_OBJECT>
 using DisplayFunc = function<void(EDITING_OBJECT)>;
 
-void Display(string const& val) { ImGui::Text("%s", val.c_str()); }
-void Display(TypeReference const& val) { auto name = val.ToString(); ImGui::Text("%s", name.c_str()); }
+void Display(string const& val) { Label(val); }
+void Display(TypeReference const& val) { Label(val.ToString()); }
 
 template <typename E, typename P>
 bool GenericEditor(const char* id, Database& db, E def, 
-	ValidateFunc<E, P> validate, 
-	EditorFunc<E, P> editor, 
-	ApplyFunc<E, P> apply, 
-	GetterFunc<E, P> getter, 
+	/*ValidateFunc<E, P>*/ auto&& validate, 
+	/*EditorFunc<E, P>*/ auto&& editor, 
+	/*ApplyFunc<E, P>*/ auto&& apply, 
+	/*GetterFunc<E, P>*/ auto&& getter, 
 	DisplayFunc<E> display = {}) /// TODO: reset ?
 {
 	bool changed = false;
@@ -102,12 +107,14 @@ bool GenericEditor(const char* id, Database& db, E def,
 	PushID(id);
 	PushID(def);
 
+	/*
 	if (auto it = is_editing.find(def); it == is_editing.end())
 	{
 		decltype(auto) val = getter(def);
 		if (validate(def, val).has_error())
 			is_editing[def] = val;
 	}
+	*/
 
 	if (auto it = is_editing.find(def); it != is_editing.end())
 	{
@@ -260,7 +267,7 @@ bool EnumeratorDescriptiveNameEditor(Database& db, EnumeratorDefinition const* d
 			if (def->DescriptiveName.empty())
 				ImGui::TextDisabled("%s", def->Name.c_str());
 			else
-				ImGui::Text("%s", def->DescriptiveName.c_str());
+				Label(def->DescriptiveName);
 		}
 	);
 }
@@ -441,19 +448,18 @@ void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, 
 	switch (settings.first)
 	{
 	case 0:
-		Text("NOTE: Removing this field will also remove all data stored in this field!");
+		Label("NOTE: Removing this field will also remove all data stored in this field!");
 		break;
 	case 1:
 	{
 		auto changed = Change(db, usage);
-		auto str = format("Change: var {0} : {1}; -> var {0} : {2};", usage.Field->Name, usage.Field->FieldType.ToString(), changed.ToString());
-		Text("%s", str.c_str());
+		Label(format("Change: var {0} : {1}; -> var {0} : {2};", usage.Field->Name, usage.Field->FieldType.ToString(), changed.ToString()));
 		Spacing();
 	}
 	if (usage.References.size() == 1 && usage.References[0].empty())
-		Text("NOTE: Changing the field type to 'void' will also remove all data stored in this field!");
+		Label("NOTE: Changing the field type to 'void' will also remove all data stored in this field!");
 	else
-		Text("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
+		Label("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
 	break;
 	}
 }
@@ -508,7 +514,7 @@ result<void, string> ApplyChangeOption(Database& db, TypeIsBaseTypeOf const& usa
 void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, TypeHasDataInDataStore const& usage)
 {
 	settings.first = 0;
-	ImGui::Text("NOTE: All data of this type will be deleted");
+	Label("NOTE: All data of this type will be deleted");
 	/// TODO: Option to perform a data export of just this type
 }
 
@@ -544,7 +550,7 @@ struct DeleteFieldModal : IModal
 
 		auto text = format("You are trying to delete the field '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mField->ParentRecord->Name(), mField->Name, mStores.size());
 
-		Text("%s", text.c_str());
+		Label(text);
 
 		size_t i = 0;
 		for (auto& store : mStores)
@@ -593,7 +599,7 @@ struct DeleteEnumeratorModal : IModal
 
 		auto text = format("You are trying to delete the enumerator '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mEnumerator->ParentEnum->Name(), mEnumerator->Name, mStores.size());
 
-		Text("%s", text.c_str());
+		Label(text);
 
 		size_t i = 0;
 		for (auto& store : mStores)
@@ -644,7 +650,7 @@ struct DeleteTypeModal : IModal
 
 		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mType->Name(), mUsages.size());
 
-		Text("%s", text.c_str());
+		Label(text);
 
 		int i = 0;
 		for (auto& usage : mUsages)
@@ -724,7 +730,7 @@ void DoConfirmUI(string confirm_text, FUNC&& func)
 	using namespace ImGui;
 	if (BeginPopupContextItem(confirm_text.c_str(), 0))
 	{
-		Text("%s", confirm_text.c_str());
+		Label(confirm_text);
 		if (Button("Yes"))
 		{
 			func();
@@ -761,8 +767,8 @@ void DoDeleteValueUI(DataStore& store, string_view name)
 void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 {
 	using namespace ImGui;
-	Text("Name: "); SameLine(); TypeNameEditor(db, def);
-	Text("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
+	Label("Name: "); SameLine(); TypeNameEditor(db, def);
+	Label("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
 
 	if (Button("Add Field"))
 	{
@@ -796,7 +802,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				auto type = format("{}", field->FieldType.ToString());
 				TextDisabled("%s", type.c_str());
 				TableNextColumn();
-				Text("Attributes");
+				Label("Attributes");
 				TableNextColumn();
 				SmallButton("Move to Child");
 			}
@@ -809,18 +815,18 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				SetNextItemWidth(GetContentRegionAvail().x);
 				FieldTypeEditor(db, field);
 				TableNextColumn();
-				Text("Attributes");
+				Label("Attributes");
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
 				if (SmallButton("Up"))
-					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index - 1)); });
+					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index - 1))); });
 				EndDisabled();
 				SameLine();
 
 				BeginDisabled(index == def->Fields().size() - 1);
 				if (SmallButton("Down"))
-					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, index + 1)); });
+					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index + 1))); });
 				EndDisabled();
 				SameLine();
 
@@ -848,7 +854,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 void EditEnum(Database& db, EnumDefinition const* enoom)
 {
 	using namespace ImGui;
-	Text("Name: "); SameLine(); TypeNameEditor(db, enoom);
+	Label("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
 	if (Button("Add Enumerator"))
 	{
@@ -889,7 +895,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 			SetNextItemWidth(GetContentRegionAvail().x);
 			EnumeratorDescriptiveNameEditor(db, enumerator);
 			TableNextColumn();
-			Text("Attributes");
+			Label("Attributes");
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
@@ -1054,7 +1060,7 @@ void DataTab()
 
 							TableNextColumn();
 							/// FieldNameEditor(db, field);
-							Text("%s", name.c_str()); SameLine(); SmallButton("Edit");
+							Label(name); SameLine(); SmallButton("Edit");
 							TableNextColumn();
 							SetNextItemWidth(GetContentRegionAvail().x);
 							/// FieldTypeEditor(db, field);
