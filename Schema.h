@@ -53,7 +53,7 @@ enum class TemplateParameterQualifier
 	Enum,
 	Integral,
 	Floating,
-	///Scalar, /// Scalar/Simple - wtf does that even mean?!
+	Scalar, /// means comparable by
 
 	Size,
 	Pointer,
@@ -99,12 +99,15 @@ struct TypeDefinition
 
 	auto const& Schema() const noexcept { return mSchema; }
 	auto const& Name() const noexcept { return mName; }
+	string IconName() const noexcept { return string{ Icon() } + Name(); }
 	auto const& BaseType() const noexcept { return mBaseType; }
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
 	auto const& Attributes() const noexcept { return mAttributes; }
 
 	virtual json ToJSON() const;
 	virtual void FromJSON(json const& value);
+
+	virtual string_view Icon() const noexcept = 0;
 
 protected:
 
@@ -133,17 +136,26 @@ protected:
 
 };
 
+enum class FieldFlags
+{
+	Private,
+	Transient,
+	Getter,
+	Setter
+};
+
 struct FieldDefinition
 {
 	RecordDefinition const* ParentRecord = nullptr;
 	string Name;
 	TypeReference FieldType{};
 	json Attributes;
+	enum_flags<FieldFlags> Flags;
 
 	FieldDefinition(RecordDefinition const* parent, string name, TypeReference ref) : ParentRecord(parent), Name(move(name)), FieldType(move(ref)) {}
 	FieldDefinition(RecordDefinition const* parent, json const& def) : ParentRecord(parent) { FromJSON(def); }
 	
-	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"attributes", Attributes} }); }
+	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"attributes", Attributes}, {"flags", Flags} }); }
 	void FromJSON(json const& value);
 
 	string ToString() const { return format("var {} : {}; // {}", Name, FieldType.ToString(), Attributes.dump()); }
@@ -183,6 +195,8 @@ struct StructDefinition : RecordDefinition
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Struct; }
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
+	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_STRUCTURE; };
+
 protected:
 
 	using RecordDefinition::RecordDefinition;
@@ -192,6 +206,8 @@ struct ClassDefinition : RecordDefinition
 {
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Class; }
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
+
+	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_CLASS; };
 
 protected:
 
@@ -247,6 +263,8 @@ struct EnumDefinition : TypeDefinition
 
 	auto Enumerators() const noexcept { return mEnumerators | views::transform([](unique_ptr<EnumeratorDefinition> const& element) -> EnumeratorDefinition const* const { return element.get(); }); }
 
+	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_ENUM; };
+
 protected:
 
 	friend struct Schema;
@@ -267,12 +285,14 @@ struct BuiltinDefinition : TypeDefinition
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::BuiltIn; }
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
+	virtual string_view Icon() const noexcept { return mIcon; };
+
 protected:
 
 	friend struct Schema;
 
-	BuiltinDefinition(::Schema const& schema, string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
-		: TypeDefinition(schema, move(name), {}), mNativeEquivalent(move(native)), mMarkable(markable)
+	BuiltinDefinition(::Schema const& schema, string name, string native, vector<TemplateParameter> template_params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers, string icon = ICON_VS_SYMBOL_MISC)
+		: TypeDefinition(schema, move(name), {}), mNativeEquivalent(move(native)), mApplicableQualifiers(applicable_qualifiers), mMarkable(markable), mIcon(move(icon))
 	{
 		mTemplateParameters = move(template_params);
 	}
@@ -280,6 +300,7 @@ protected:
 	string mNativeEquivalent;
 	bool mMarkable = false;
 	ghassanpl::enum_flags<TemplateParameterQualifier> mApplicableQualifiers;
+	string mIcon;
 
 };
 
@@ -312,7 +333,7 @@ private:
 		return result;
 	}
 
-	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers);
+	BuiltinDefinition const* AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers, string icon = ICON_VS_SYMBOL_MISC);
 
 	vector<unique_ptr<TypeDefinition>> mDefinitions;
 	BuiltinDefinition const* mVoid = nullptr;

@@ -1,11 +1,8 @@
 #include "pch.h"
-#include "pch.h"
 
-#include "imgui_impl_sdl.h"
-#include "imgui_impl_sdlrenderer.h"
+#include "UICommon.h"
 #include <SDL2/SDL.h>
 #undef main
-#include <imgui_stdlib.h>
 #include <any>
 
 #include "Database.h"
@@ -13,8 +10,7 @@
 #include "Values.h"
 
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
-
-using FilterFunc = std::function<bool(TypeDefinition const*)>;
+#include "X:\Code\Native\ghassanpl\windows_message_box\windows_folder_browser.h"
 
 struct IModal
 {
@@ -26,12 +22,7 @@ struct IModal
 	bool Close = false;
 };
 
-void Label(string_view s)
-{
-	ImGui::TextUnformatted(s.data(), s.data() + s.size());
-}
 
-/// TODO: Icons for Error and Success modals
 struct ErrorModal : IModal
 {
 	variant<string, function<void()>> Message;
@@ -46,7 +37,7 @@ struct ErrorModal : IModal
 		if (ImGui::Button("OK"))
 			Close = true;
 	}
-	virtual string WindowName() const override { return "Error"; }
+	virtual string WindowName() const override { return ICON_VS_ERROR "Error"; }
 };
 
 struct SuccessModal : IModal
@@ -63,7 +54,7 @@ struct SuccessModal : IModal
 		if (ImGui::Button("OK"))
 			Close = true;
 	}
-	virtual string WindowName() const override { return "Success"; }
+	virtual string WindowName() const override { return ICON_VS_PASS "Success"; }
 };
 
 vector<unique_ptr<IModal>> Modals;
@@ -74,97 +65,6 @@ void OpenModal(ARGS&&... args)
 	Modals.push_back(make_unique<T>(forward<ARGS>(args)...));
 }
 
-template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ValidateFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
-
-template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using EditorFunc = function<void(EDITING_OBJECT, OBJECT_PROPERTY&)>;
-
-template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using ApplyFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
-
-template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
-using GetterFunc = function<OBJECT_PROPERTY(EDITING_OBJECT)>;
-
-template <typename EDITING_OBJECT>
-using DisplayFunc = function<void(EDITING_OBJECT)>;
-
-void Display(string const& val) { Label(val); }
-void Display(TypeReference const& val) { Label(val.ToString()); }
-
-template <typename E, typename P>
-bool GenericEditor(const char* id, Database& db, E def, 
-	/*ValidateFunc<E, P>*/ auto&& validate, 
-	/*EditorFunc<E, P>*/ auto&& editor, 
-	/*ApplyFunc<E, P>*/ auto&& apply, 
-	/*GetterFunc<E, P>*/ auto&& getter, 
-	DisplayFunc<E> display = {}) /// TODO: reset ?
-{
-	bool changed = false;
-	using namespace ImGui;
-	static map<string, map<E, P>, less<>> is_editing_map;
-	auto& is_editing = is_editing_map[id];
-	PushID(id);
-	PushID(def);
-
-	/*
-	if (auto it = is_editing.find(def); it == is_editing.end())
-	{
-		decltype(auto) val = getter(def);
-		if (validate(def, val).has_error())
-			is_editing[def] = val;
-	}
-	*/
-
-	if (auto it = is_editing.find(def); it != is_editing.end())
-	{
-		editor(def, it->second);
-		if (auto result = validate(def, it->second); result.has_error())
-		{
-			TextColored({ 1,0,0,1 }, "%s", result.error().c_str());
-			BeginDisabled();
-			SmallButton("Apply");
-			EndDisabled();
-		}
-		else
-		{
-			if (SmallButton("Apply"))
-			{
-				auto result = apply(def, it->second);
-				if (result.has_error())
-				{
-					/// TODO: Show error
-				}
-				else
-				{
-					is_editing.erase(def);
-					changed = true;
-				}
-			}
-		}
-		SameLine();
-		if (SmallButton("Cancel"))
-			is_editing.erase(def);
-	}
-	else
-	{
-		if (display)
-			display(def);
-		else
-		{
-			decltype(auto) val = getter(def);
-			Display(val);
-		}
-		SameLine();
-		if (SmallButton("Edit"))
-			is_editing[def] = getter(def);
-	}
-
-	PopID();
-	PopID();
-	return changed;
-}
-
 /// TODO: Move this away from depending on Database& db
 bool TypeNameEditor(Database& db, TypeDefinition const* def)
 {
@@ -173,9 +73,9 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 		[](TypeDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
-			InputText("###typename", &name);
+			return InputText("###typename", &name, ImGuiInputTextFlags_EnterReturnsTrue);
 		},
-		bind_front(&Database::SetTypeName, &db),
+		[&db, def](TypeDefinition const* def, string new_name) { mOpenType = def; return db.SetTypeName(def, move(new_name)); },
 		[](TypeDefinition const* def) -> auto const& { return def->Name(); }
 	);
 }
@@ -187,7 +87,7 @@ bool EnumeratorNameEditor(Database& db, EnumeratorDefinition const* def)
 		[](EnumeratorDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
-			InputText("###enumeratorname", &name);
+			return InputText("###enumeratorname", &name, ImGuiInputTextFlags_EnterReturnsTrue);
 		},
 		bind_front(&Database::SetEnumeratorName, &db),
 		[](EnumeratorDefinition const* def) -> auto const& { return def->Name; }
@@ -210,14 +110,14 @@ bool EnumeratorValueEditor(Database& db, EnumeratorDefinition const* def)
 		SetNextItemWidth(GetContentRegionAvail().x);
 		InputScalar("###enumeratorvalue", ImGuiDataType_S64, &it->second);
 
-		if (SmallButton("Apply"))
+		if (SmallButton(ICON_VS_EDIT "Apply"))
 		{
 			CheckError(db.SetEnumeratorValue(def, it->second));
 			is_editing.erase(def);
 			changed = true;
 		}
 		SameLine();
-		if (SmallButton("Reset"))
+		if (SmallButton(/*ICON_VS_REFRESH*/ ICON_VS_DISCARD "Reset"))
 		{
 			CheckError(db.SetEnumeratorValue(def, nullopt));
 			is_editing.erase(def);
@@ -235,11 +135,12 @@ bool EnumeratorValueEditor(Database& db, EnumeratorDefinition const* def)
 		else
 			ImGui::Text("%lli", actual);
 		SameLine();
-		if (SmallButton("Edit"))
+		if (SmallButton(ICON_VS_EDIT "Edit"))
 			is_editing[def] = actual;
 		if (def->Value.has_value())
 		{
-			if (SmallButton("Reset"))
+			SameLine();
+			if (SmallButton(/*ICON_VS_REFRESH*/ ICON_VS_DISCARD "Reset"))
 			{
 				CheckError(db.SetEnumeratorValue(def, nullopt));
 				changed = true;
@@ -259,7 +160,7 @@ bool EnumeratorDescriptiveNameEditor(Database& db, EnumeratorDefinition const* d
 		[](EnumeratorDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
-			InputTextWithHint("###enumeratordescname", def->Name.c_str(), &name);
+			return InputTextWithHint("###enumeratordescname", def->Name.c_str(), &name, ImGuiInputTextFlags_EnterReturnsTrue);
 		},
 		bind_front(&Database::SetEnumeratorDescriptiveName, &db),
 		[](EnumeratorDefinition const* def) -> auto const& { return def->DescriptiveName; },
@@ -288,7 +189,7 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 				{
 					if (def->Type() == type->Type() && !db.Schema().IsParent(def, type))
 					{
-						if (Selectable(type->Name().c_str(), type == current.Type))
+						if (Selectable(type->IconName().c_str(), type == current.Type))
 							current = TypeReference{ type };
 					}
 				}
@@ -307,65 +208,11 @@ bool FieldNameEditor(Database& db, FieldDefinition const* def)
 		[](FieldDefinition const* def, string& name) {
 			using namespace ImGui;
 			SetNextItemWidth(GetContentRegionAvail().x);
-			InputText("###fieldname", &name);
+			return InputText("###fieldname", &name, ImGuiInputTextFlags_EnterReturnsTrue);
 		},
 		bind_front(&Database::SetFieldName, &db),
 		[](FieldDefinition const* def) -> auto const& { return def->Name; }
 	);
-}
-
-void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter = {}, const char* label = nullptr)
-{
-	using namespace ImGui;
-
-	PushID(&ref);
-	auto current = ref.ToString();
-	if (label == nullptr)
-	{
-		label = "##typechooser";
-		SetNextItemWidth(GetContentRegionAvail().x);
-	}
-	if (BeginCombo(label, current.c_str()))
-	{
-		for (auto type : db.Definitions())
-		{
-			if (!filter || filter(type))
-			{
-				if (Selectable(type->Name().c_str(), type == ref.Type))
-				{
-					ref = TypeReference{ type };
-				}
-			}
-		}
-		EndCombo();
-	}
-
-	if (ref.Type)
-	{
-		Indent(8.0f);
-		size_t i = 0;
-		for (auto& param : ref.Type->TemplateParameters())
-		{
-			PushID(&param);
-			if (param.Qualifier == TemplateParameterQualifier::Size)
-			{
-				if (!holds_alternative<uint64_t>(ref.TemplateArguments[i]))
-					ref.TemplateArguments[i] = uint64_t{};
-				InputScalar(param.Name.c_str(), ImGuiDataType_U64, &get<uint64_t>(ref.TemplateArguments[i]));
-			}
-			else
-			{
-				if (holds_alternative<uint64_t>(ref.TemplateArguments[i]))
-					ref.TemplateArguments[i] = TypeReference{};
-				TypeChooser(db, get<TypeReference>(ref.TemplateArguments[i]), {}, param.Name.c_str());
-			}
-			PopID();
-			++i;
-		}
-		Unindent(8.0f);
-	}
-
-	PopID();
 }
 
 bool FieldTypeEditor(Database& db, FieldDefinition const* def)
@@ -389,8 +236,6 @@ void CheckError(result<void, string> val, string else_string)
 	else if (!else_string.empty())
 		OpenModal<SuccessModal>(move(else_string));
 }
-
-vector<function<void()>> LateExec;
 
 void ShowOptions(int& chosen, span<string> options)
 {
@@ -724,28 +569,9 @@ struct DeleteTypeModal : IModal
 	}
 };
 
-template <typename FUNC>
-void DoConfirmUI(string confirm_text, FUNC&& func)
-{
-	using namespace ImGui;
-	if (BeginPopupContextItem(confirm_text.c_str(), 0))
-	{
-		Label(confirm_text);
-		if (Button("Yes"))
-		{
-			func();
-			CloseCurrentPopup();
-		}
-		SameLine();
-		if (Button("No"))
-			CloseCurrentPopup();
-		EndPopup();
-	}
-}
-
 void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 {
-	ImGui::Button("Delete Type");
+	ImGui::Button(ICON_VS_TRASH "Delete Type");
 	DoConfirmUI("Are you sure you want to delete this type?", [&db, def]() {
 		auto usages = db.LocateTypeUsages(def);
 		if (usages.empty())
@@ -756,21 +582,13 @@ void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 	);
 }
 
-void DoDeleteValueUI(DataStore& store, string_view name)
-{
-	ImGui::SmallButton("Delete Value");
-	DoConfirmUI("Are you sure you want to delete this value?", [&store, name]() {
-		LateExec.push_back([&store, name] { store.DeleteValue(name); });
-	});
-}
-
 void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 {
 	using namespace ImGui;
 	Label("Name: "); SameLine(); TypeNameEditor(db, def);
 	Label("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
 
-	if (Button("Add Field"))
+	if (Button(ICON_VS_SYMBOL_FIELD "Add Field"))
 	{
 		ignore = db.AddNewField(def);
 	}
@@ -778,12 +596,12 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 
 	DoDeleteTypeUI(db, def);
 
-	if (BeginTable("Fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
+	if (BeginTable("Fields", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 	{
 		TableSetupColumn("Name");
 		TableSetupColumn("Type");
 		TableSetupColumn("Attributes");
-		TableSetupColumn("Actions");
+		TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthStretch);
 		TableSetupScrollFreeze(0, 1);
 		TableHeadersRow();
 
@@ -819,21 +637,21 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
-				if (SmallButton("Up"))
+				if (SmallButton(ICON_VS_TRIANGLE_UP "Up"))
 					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index - 1))); });
 				EndDisabled();
 				SameLine();
 
 				BeginDisabled(index == def->Fields().size() - 1);
-				if (SmallButton("Down"))
+				if (SmallButton(ICON_VS_TRIANGLE_DOWN "Down"))
 					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index + 1))); });
 				EndDisabled();
 				SameLine();
 
-				SmallButton("Duplicate"); SameLine();
-				SmallButton("Copy"); SameLine();
+				SmallButton(ICON_VS_EXPAND_ALL "Duplicate"); SameLine();
+				SmallButton(ICON_VS_COPY "Copy"); SameLine();
 
-				SmallButton("Delete");
+				SmallButton(ICON_VS_TRASH "Delete");
 				DoConfirmUI("Are you sure you want to delete this field?", [&db, field]() {
 					auto usages = db.StoresWithFieldData(field);
 					if (usages.empty())
@@ -856,7 +674,9 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 	using namespace ImGui;
 	Label("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
-	if (Button("Add Enumerator"))
+	/// TODO: Edit base type: [none] or integer types
+
+	if (Button(ICON_VS_SYMBOL_ENUM_MEMBER "Add Enumerator"))
 	{
 		ignore = db.AddNewEnumerator(enoom);
 	}
@@ -869,13 +689,13 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 	/// TODO: PropertyEditor<bool>(enoom, "backcomp", "Try To Ensure Backwards Compatibility");
 
-	if (BeginTable("Enumerators", 5, ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable))
+	if (BeginTable("Enumerators", 5, ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable| ImGuiTableFlags_SizingStretchProp))
 	{
 		TableSetupColumn("Name");
 		TableSetupColumn("Value");
 		TableSetupColumn("Descriptive Name");
 		TableSetupColumn("Attributes");
-		TableSetupColumn("Actions");
+		TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthStretch);
 		TableSetupScrollFreeze(0, 1);
 		TableHeadersRow();
 
@@ -899,20 +719,20 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
-			if (SmallButton("Up"))
+			if (SmallButton(ICON_VS_TRIANGLE_UP "Up"))
 				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index - 1)); });
 			EndDisabled();
 			SameLine();
 
 			BeginDisabled(index == enoom->Enumerators().size() - 1);
-			if (SmallButton("Down"))
+			if (SmallButton(ICON_VS_TRIANGLE_DOWN "Down"))
 				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index + 1)); });
 			EndDisabled();
 			SameLine();
 
-			SmallButton("Duplicate"); SameLine();
-			SmallButton("Copy"); SameLine();
-			SmallButton("Delete");
+			SmallButton(ICON_VS_EXPAND_ALL "Duplicate"); SameLine();
+			SmallButton(ICON_VS_COPY "Copy"); SameLine();
+			SmallButton(ICON_VS_TRASH "Delete");
 			DoConfirmUI("Are you sure you want to delete this enumerator?", [&db, enumerator]() {
 				auto usages = db.StoresWithEnumeratorData(enumerator);
 				if (usages.empty())
@@ -929,19 +749,20 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 	}
 }
 
-Database mDatabase{ "test/db1/" };
-Database* mCurrentDatabase = &mDatabase;
+unique_ptr<Database> mCurrentDatabase = nullptr;
 
 void TypesTab()
 {
 	using namespace ImGui;
 	Spacing();
-	if (Button("Add Struct"))
-		ignore = mCurrentDatabase->AddNewStruct();
+	if (Button(ICON_VS_SYMBOL_STRUCTURE "Add Struct"))
+		mOpenType = mCurrentDatabase->AddNewStruct().value();
 	SameLine();
-	Button("Add Class"); SameLine();
-	if (Button("Add Enum"))
-		ignore = mCurrentDatabase->AddNewEnum();
+	if (Button(ICON_VS_SYMBOL_CLASS "Add Class"))
+		mOpenType = mCurrentDatabase->AddNewClass().value();
+	SameLine();
+	if (Button(ICON_VS_SYMBOL_ENUM "Add Enum"))
+		mOpenType = mCurrentDatabase->AddNewEnum().value();
 	SameLine();
 	Button("Add Union"); SameLine();
 	Button("Add Alias");
@@ -953,9 +774,16 @@ void TypesTab()
 	for (auto def : mCurrentDatabase->Definitions())
 	{
 		PushID(def);
+
+		if (def == mOpenType)
+		{
+			SetNextItemOpen(true);
+			mOpenType = nullptr;
+		}
+
 		if (auto strukt = dynamic_cast<StructDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+			if (CollapsingHeader(def->IconName().c_str()))
 			{
 				Indent();
 				EditRecord(*mCurrentDatabase, strukt, true);
@@ -964,16 +792,16 @@ void TypesTab()
 		}
 		else if (auto klass = dynamic_cast<ClassDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+			if (CollapsingHeader(def->IconName().c_str()))
 			{
 				Indent();
-				EditRecord(*mCurrentDatabase, strukt, false);
+				EditRecord(*mCurrentDatabase, klass, false);
 				Unindent();
 			}
 		}
 		else if (auto eenoom = dynamic_cast<EnumDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->Name().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+			if (CollapsingHeader(def->IconName().c_str()))
 			{
 				Indent();
 				EditEnum(*mCurrentDatabase, eenoom);
@@ -984,144 +812,7 @@ void TypesTab()
 	}
 }
 
-void DataTab()
-{
-	using namespace ImGui;
-	if (BeginTabBar("Data Stores"))
-	{
-		for (auto& [name, store] : mCurrentDatabase->DataStores())
-		{
-			if (BeginTabItem(name.c_str()))
-			{
-				if (Button("Add Value"))
-				{
-					auto name = FreshName("Value", [&](string_view name) { return store.HasValue(name); });
-					//store.AddValue(json::object({ { "name", name }, { "type", TypeReference{ mCurrentDatabase->VoidType() }.ToJSON()}, {"value", json{}}}));
-					store.AddValue(name, TypeReference{ mCurrentDatabase->VoidType() });
-				}
-				SameLine();
-				if (Button("Save Data"))
-				{
-
-				}
-				SameLine();
-				if (Button("Revert Data"))
-				{
-
-				}
-				SameLine();
-				if (Button("Import Value from JSON"))
-				{
-
-				}
-				SameLine();
-				if (Button("Merge Another Data Store"))
-				{
-
-				}
-				SameLine();
-				if (Button("Delete Data Store"))
-				{
-
-				}
-				SameLine();
-
-				static bool show_json = false;
-				Checkbox("Show JSON", &show_json);
-
-				Spacing();
-				Separator();
-				Spacing();
-
-				if (show_json)
-				{
-					string j = store.Storage().dump(2);
-					PushTextWrapPos(0.0f);
-					TextUnformatted(j.data(), j.data() + j.size());
-					PopTextWrapPos();
-				}
-				else
-				{
-					if (BeginTable("Data Values", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
-					{
-						TableSetupColumn("Name");
-						TableSetupColumn("Type");
-						TableSetupColumn("Value");
-						TableSetupColumn("Actions");
-						TableSetupScrollFreeze(0, 1);
-						TableHeadersRow();
-
-						TableNextRow();
-						int index = 0;
-
-						for (auto& [name, value] : store.Roots().items())
-						{
-							PushID(index);
-
-							TableNextColumn();
-							/// FieldNameEditor(db, field);
-							Label(name); SameLine(); SmallButton("Edit");
-							TableNextColumn();
-							SetNextItemWidth(GetContentRegionAvail().x);
-							/// FieldTypeEditor(db, field);
-							TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
-							GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
-								/// validator
-								[&](json* value, TypeReference const& new_type) -> result<void, string> {
-									if (ResultOfConversion(old_type, new_type, value->at("value")) == ConversionResult::ConversionImpossible)
-										return failure("conversion to this type is impossible");
-									return ValidateType(new_type);
-								},
-								/// editor
-								[&](json* value, TypeReference& current) {
-									TypeChooser(mDatabase, current);
-									auto result = ResultOfConversion(old_type, current, value->at("value"));
-									switch (result)
-									{
-									case ConversionResult::DataCorrupted:
-										TextColored({ 1,1,0,1 }, "WARNING: Data might be corrupted if you attempt this type change!");
-										break;
-									case ConversionResult::DataLost:
-										TextColored({ 1,1,0,1 }, "WARNING: Data WILL BE LOST if you attempt this type change!");
-										break;
-									}
-								},
-								/// setter
-								[&](json* value, TypeReference const& new_type) -> result<void, string> {
-									TypeReference old_type{ mDatabase.Schema(), value->at("type") };
-									value->at("type") = new_type.ToJSON();
-									return Convert(old_type, new_type, value->at("value"));
-								},
-								/// getter
-								[&](json* value) { return TypeReference{ mDatabase.Schema(), value->at("type") }; }
-							);
-							TableNextColumn();
-							json::json_pointer ptr{ "/" + name };
-							SetNextItemWidth(GetContentRegionAvail().x);
-							EditValue(TypeReference{ mCurrentDatabase->Schema(), value.at("type") }, value.at("value"), {}, ptr, & store);
-							TableNextColumn();
-
-							DoDeleteValueUI(store, name);
-							SameLine();
-							SmallButton("Export Value to JSON");
-
-							index++;
-							PopID();
-						}
-
-						EndTable();
-					}
-				}
-
-				EndTabItem();
-			}
-		}
-		if (TabItemButton("+"))
-		{
-		}
-		EndTabBar();
-	}
-}
+void DataTab();
 
 void AttributesTab()
 {
@@ -1152,11 +843,11 @@ void PropertiesTab()
 	InputText("Namespace", &mCurrentDatabase->Namespace);
 
 	Separator();
-	if (Button("Create Backup"))
+	if (Button(ICON_VS_FILE_ZIP "Create Backup"))
 		CheckError(mCurrentDatabase->CreateBackup(), "Backup successfully created");
 }
 
-int main(int, char**)
+int main(int argc, char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
 	{
@@ -1165,7 +856,7 @@ int main(int, char**)
 	}
 
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-	SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL2+SDL_Renderer example", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
+	SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL2+SDL_Renderer example", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1920, 1080, window_flags);
 
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
 	if (renderer == NULL)
@@ -1184,6 +875,30 @@ int main(int, char**)
 	ImGui_ImplSDLRenderer_Init(renderer);
 
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+
+	ImFont* font = io.Fonts->AddFontFromFileTTF("Roboto-Regular.ttf", 22.0f);
+
+	static const ImWchar icons_ranges[] = { ICON_MIN_VS, ICON_MAX_VS, 0 };
+	ImFontConfig config;
+	config.MergeMode = true;
+	config.GlyphOffset.x = -2.0f;
+	config.GlyphOffset.y = 5.0f;
+	config.GlyphMinAdvanceX = 16.0f;
+	io.Fonts->AddFontFromFileTTF(FONT_ICON_FILE_NAME_VS, 22.0f, &config, icons_ranges);
+	io.Fonts->Build();
+
+	if (argc > 1)
+	{
+		try
+		{
+			mCurrentDatabase = make_unique<Database>(argv[1]);
+		}
+		catch (...)
+		{
+
+		}
+	}
 
 	// Main loop
 	bool done = false;
@@ -1208,44 +923,80 @@ int main(int, char**)
 		ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
 		ImGui::Begin("Main Window", nullptr, ImGuiWindowFlags_NoDecoration);
 
-		if (ImGui::BeginTabBar("Main Tabs"))
+		if (ImGui::Button("Open Database"))
 		{
-			if (ImGui::BeginTabItem("Types"))
+			try
 			{
-				TypesTab();
-				ImGui::EndTabItem();
+				auto path = ghassanpl::windows_browse_for_folder({ .title = "Choose Database Directory" });
+				if (!path.empty())
+				{
+					mCurrentDatabase = make_unique<Database>(path);
+				}
 			}
-			if (ImGui::BeginTabItem("Data Stores"))
+			catch (...)
 			{
-				DataTab();
-				ImGui::EndTabItem();
+				ghassanpl::windows_message_box("Error", "Could not open database", ghassanpl::msg::ok_button, ghassanpl::windows_message_box_icon::Error);
 			}
-			if (ImGui::BeginTabItem("Attributes"))
+		}
+		ImGui::SameLine();
+		ImGui::BeginDisabled(mCurrentDatabase == nullptr);
+		if (ImGui::Button("Close Database"))
+		{
+			mCurrentDatabase->SaveAll();
+			mCurrentDatabase = nullptr;
+		}
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button("Save All"))
+		{
+			mCurrentDatabase->SaveAll();
+		}
+		ImGui::SameLine();
+
+		ImGui::NewLine();
+		ImGui::Separator();
+
+		if (mCurrentDatabase)
+		{
+			if (ImGui::BeginTabBar("Main Tabs"))
 			{
-				AttributesTab();
-				ImGui::EndTabItem();
+				if (ImGui::BeginTabItem(ICON_VS_TYPE_HIERARCHY_SUB "Types"))
+				{
+					TypesTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(ICON_VS_DATABASE "Data Stores"))
+				{
+					DataTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(ICON_VS_SYMBOL_PARAMETER "Attributes"))
+				{
+					AttributesTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(ICON_VS_SYMBOL_INTERFACE "Interfaces"))
+				{
+					InterfacesTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(/*ICON_VS_LAYOUT*/ICON_VS_PREVIEW "Displays"))
+				{
+					DisplaysTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(ICON_VS_CODE "Scripting"))
+				{
+					ScriptingTab();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem(ICON_VS_SETTINGS "Properties")) /// ICON_VS_SETTINGS_GEAR / ICON_VS_TOOLS
+				{
+					PropertiesTab();
+					ImGui::EndTabItem();
+				}
+				ImGui::EndTabBar();
 			}
-			if (ImGui::BeginTabItem("Interfaces"))
-			{
-				InterfacesTab();
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Displays"))
-			{
-				DisplaysTab();
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Scripting"))
-			{
-				ScriptingTab();
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Properties"))
-			{
-				PropertiesTab();
-				ImGui::EndTabItem();
-			}
-			ImGui::EndTabBar();
 		}
 
 		ImGui::End();
@@ -1274,7 +1025,8 @@ int main(int, char**)
 		SDL_RenderPresent(renderer);
 	}
 
-	mCurrentDatabase->SaveAll();
+	if (mCurrentDatabase)
+		mCurrentDatabase->SaveAll();
 
 	// Cleanup
 	ImGui_ImplSDLRenderer_Shutdown();

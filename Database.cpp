@@ -39,7 +39,28 @@ result<StructDefinition const*, string> Database::AddNewStruct()
 	/// Save
 	SaveAll();
 
-	return success();
+	return success(result);
+}
+
+result<ClassDefinition const*, string> Database::AddNewClass()
+{
+	/// Validation
+
+	/// Schema Change
+	auto result = mSchema.AddType<ClassDefinition>(FreshName("Class", [this](string_view sv) { return !!mSchema.ResolveType(sv); }));
+	if (!result)
+		return result;
+
+	/// DataStore update (v2)
+	/// Adding a new struct should not change the data stores
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "AddNewClass"}, {"name", result->Name()} });
+
+	/// Save
+	SaveAll();
+
+	return success(result);
 }
 
 result<EnumDefinition const*, string> Database::AddNewEnum()
@@ -63,7 +84,7 @@ result<EnumDefinition const*, string> Database::AddNewEnum()
 	/// Save
 	SaveAll();
 
-	return success();
+	return success(result);
 }
 
 result<void, string> Database::AddNewEnumerator(Enum def)
@@ -610,11 +631,18 @@ void Database::SaveAll()
 		save_ubjson_file(mDirectory / format("{}.datastore", name), store.Storage());
 	}
 
+	save_json_file(mDirectory / "database.json", this->Save());
+
 	mChangeLog.flush();
 }
 
 void Database::LoadAll()
 {
+	if (filesystem::exists(mDirectory / "database.json"))
+	{
+		this->Load(ghassanpl::load_json_file(mDirectory / "database.json"));
+	}
+
 	if (filesystem::exists(mDirectory / "schema.json"))
 	{
 		LoadSchema(ghassanpl::load_json_file(mDirectory / "schema.json"));
@@ -694,6 +722,16 @@ void Database::LoadSchema(json const& from)
 			throw std::runtime_error(format("invalid type defined: {}", name));
 		type_def->FromJSON(typedesc);
 	}
+}
+
+json Database::Save() const
+{
+	return json::object({ { "namespace", Namespace }});
+}
+
+void Database::Load(json const& j)
+{
+	Namespace = get(j, "namespace", "", jtype::string);
 }
 
 void Database::AddFormatPlugin(unique_ptr<FormatPlugin> plugin)

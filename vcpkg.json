@@ -8,7 +8,10 @@
     "outcome",
 
     "sdl2",
-    "imgui",
+    {
+      "name": "imgui",
+      "features": ["freetype"]
+    },
 
     "kubazip"
   ],

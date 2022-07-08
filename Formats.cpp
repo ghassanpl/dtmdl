@@ -72,16 +72,6 @@ string CppDeclarationFormat::ExportFileName()
 	return "header.hpp";
 }
 
-void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, ClassDefinition const* klass)
-{
-
-}
-
-void CppDeclarationFormat::WriteEnum(SimpleOutputter& out, Database const& db, EnumDefinition const* klass)
-{
-
-}
-
 string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition const* type)
 {
 	if (!type)
@@ -111,6 +101,28 @@ string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition c
 		{"ref", "::DataModel::NativeTypes::Ref"},
 		{"own", "::DataModel::NativeTypes::Own"},
 		{"variant", "::DataModel::NativeTypes::Variant"},
+		{"map", "::DataModel::NativeTypes::Map"},
+		{"json", "::DataModel::NativeTypes::JSON"},
+
+		{"vec2", "::DataModel::NativeTypes::vec2"},
+		{"vec3", "::DataModel::NativeTypes::vec3"},
+		{"vec4", "::DataModel::NativeTypes::vec4"},
+
+		{"dvec2", "::DataModel::NativeTypes::dvec2"},
+		{"dvec3", "::DataModel::NativeTypes::dvec3"},
+		{"dvec4", "::DataModel::NativeTypes::dvec4"},
+
+		{"ivec2", "::DataModel::NativeTypes::ivec2"},
+		{"ivec3", "::DataModel::NativeTypes::ivec3"},
+		{"ivec4", "::DataModel::NativeTypes::ivec4"},
+
+		{"uvec2", "::DataModel::NativeTypes::uvec2"},
+		{"uvec3", "::DataModel::NativeTypes::uvec3"},
+		{"uvec4", "::DataModel::NativeTypes::uvec4"},
+
+		{"bvec2", "::DataModel::NativeTypes::bvec2"},
+		{"bvec3", "::DataModel::NativeTypes::bvec3"},
+		{"bvec4", "::DataModel::NativeTypes::bvec4"},
 	};
 
 	auto it = cpp_builtin_type_names.find(type->Name());
@@ -139,6 +151,42 @@ string CppDeclarationFormat::FormatNamespace(Database const& db)
 	return db.Namespace; /// TODO: This
 }
 
+void CppDeclarationFormat::AdditionalMembers(SimpleOutputter& out, Database const& db, TypeDefinition const* type)
+{
+	out.WriteLine("");
+	string additionals_name;
+	if (db.Namespace.empty())
+		additionals_name = format("DB_ADDITIONAL_FIELDS_FOR_{}", type->Name());
+	else
+		additionals_name = format("DB_ADDITIONAL_FIELDS_FOR_{}_{}", db.Namespace, type->Name());
+	out.WriteLine("#ifdef {}", additionals_name);
+	out.WriteLine("{}", additionals_name);
+	out.WriteLine("#endif");
+}
+
+void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, ClassDefinition const* klass)
+{
+	if (mWrittenTypes.contains(klass)) return;
+	if (klass->BaseType().Type)
+	{
+		WriteClass(out, db, dynamic_cast<ClassDefinition const*>(klass->BaseType().Type));
+		out.WriteLine("");
+	}
+
+	if (klass->BaseType().Type)
+		out.WriteStart("class {} : {} {{", klass->Name(), FormatTypeReference(db, klass->BaseType()));
+	else
+		out.WriteStart("class {} {{", klass->Name());
+	out.WriteLine("public:");
+	for (auto& field : klass->Fields())
+	{
+		out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
+	}
+	
+	AdditionalMembers(out, db, klass);
+	out.WriteEnd("}};");
+}
+
 void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* klass)
 {
 	if (mWrittenTypes.contains(klass)) return;
@@ -154,7 +202,18 @@ void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db,
 		out.WriteStart("struct {} {{", klass->Name());
 	for (auto& field : klass->Fields())
 	{
-		out.WriteLine("{} {};", FormatTypeReference(db, field->FieldType), field->Name);
+		out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
+	}
+	AdditionalMembers(out, db, klass);
+	out.WriteEnd("}};");
+}
+
+void CppDeclarationFormat::WriteEnum(SimpleOutputter& out, Database const& db, EnumDefinition const* enoom)
+{
+	out.WriteStart("enum class {} {{", enoom->Name());
+	for (auto enumerator : enoom->Enumerators())
+	{
+		out.WriteLine("{} = {},", enumerator->Name, enumerator->ActualValue());
 	}
 	out.WriteEnd("}};");
 }
@@ -165,6 +224,8 @@ string CppDeclarationFormat::Export(Database const& db)
 	SimpleOutputter out{ outstr };
 	out.WriteLine("/// source_database: \"{}\"", string_ops::escaped(filesystem::absolute(db.Directory()).string(), "\"\\"));
 	out.WriteLine("/// generated_time: \"{}\"", chrono::zoned_time{chrono::current_zone(), chrono::system_clock::now()});
+
+	out.WriteLine("#include \"db_config.h\"");
 
 	if (!db.Namespace.empty())
 		out.WriteStart("namespace {} {{", db.Namespace);

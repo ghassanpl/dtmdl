@@ -62,6 +62,7 @@ struct Database
 	result<void, string> SetTypeName(Def def, string const& new_name);
 
 	result<StructDefinition const*, string> AddNewStruct();
+	result<ClassDefinition const*, string> AddNewClass();
 	result<void, string> AddNewField(Rec def);
 
 	result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);
@@ -108,22 +109,27 @@ struct Database
 
 	string Namespace;
 
+	set<string, less<>> FoldedTypes;
+
 private:
 
 	filesystem::path mDirectory;
+	ofstream mChangeLog;
+	::Schema mSchema;
+	map<string, DataStore, less<>> mDataStores;
+
+	json Save() const;
+	void Load(json const& j);
 
 	void AddFormatPlugin(unique_ptr<FormatPlugin> plugin);
 	map<string, unique_ptr<FormatPlugin>, less<>> mFormatPlugins;
 
-	ofstream mChangeLog;
 	void AddChangeLog(json log);
 
 	json SaveSchema() const;
 	void LoadSchema(json const& from);
 
-	::Schema mSchema;
-
-	map<string, DataStore, less<>> mDataStores;
-
 	void UpdateDataStores(function<void(DataStore&)> update_func);
 };
+
+extern unique_ptr<Database> mCurrentDatabase;

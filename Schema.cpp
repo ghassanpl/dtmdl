@@ -183,6 +183,7 @@ void FieldDefinition::FromJSON(json const& value)
 	Name = value.at("name").get_ref<json::string_t const&>();
 	FieldType.FromJSON(ParentRecord->Schema(), value.at("type"));
 	Attributes = get(value, "attributes");
+	Flags = get_array(value, "flags");
 }
 
 int64_t EnumeratorDefinition::ActualValue() const
@@ -247,40 +248,63 @@ void TemplateParameter::FromJSON(json const& value)
 
 Schema::Schema()
 {
-	mVoid = AddNative("void", "::DataModel::NativeTypes::Void", {}, false, {});
-	AddNative("f32", "float", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
-	AddNative("f64", "double", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass });
-	AddNative("i8", "int8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i16", "int16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i32", "int32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("i64", "int64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u8", "uint8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u16", "uint16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u32", "uint32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("u64", "uint64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass });
-	AddNative("bool", "bool", {}, false, { TemplateParameterQualifier::NotClass });
-	AddNative("string", "::DataModel::NativeTypes::String", {}, false, { TemplateParameterQualifier::NotClass });
-	AddNative("bytes", "::DataModel::NativeTypes::Bytes", {}, false, { TemplateParameterQualifier::NotClass });
-	auto flags = AddNative("flags", "::DataModel::NativeTypes::Flags", vector{
+	mVoid = AddNative("void", "::DataModel::NativeTypes::Void", {}, false, {}, ICON_VS_CIRCLE_SLASH);
+	AddNative("f32", "float", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("f64", "double", {}, false, { TemplateParameterQualifier::Floating, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("i8", "int8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("i16", "int16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("i32", "int32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("i64", "int64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("u8", "uint8_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("u16", "uint16_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("u32", "uint32_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("u64", "uint64_t", {}, false, { TemplateParameterQualifier::Integral, TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_NUMERIC);
+	AddNative("bool", "bool", {}, false, { TemplateParameterQualifier::NotClass }, ICON_VS_SYMBOL_BOOLEAN);
+	AddNative("string", "::DataModel::NativeTypes::String", {}, false, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_SYMBOL_STRING);
+	AddNative("bytes", "::DataModel::NativeTypes::Bytes", {}, false, { TemplateParameterQualifier::NotClass }, ICON_VS_FILE_BINARY);
+	AddNative("flags", "::DataModel::NativeTypes::Flags", vector{
 		TemplateParameter{ "ENUM", TemplateParameterQualifier::Enum }
-		}, false, { TemplateParameterQualifier::NotClass });
-	auto list = AddNative("list", "::DataModel::NativeTypes::List", vector{
+	}, false, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Scalar }, ICON_VS_CHECKLIST);
+	AddNative("list", "::DataModel::NativeTypes::List", vector{
 		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass, TemplateParameterFlags::CanBeIncomplete }
-		}, true, { TemplateParameterQualifier::NotClass });
-	auto arr = AddNative("array", "::DataModel::NativeTypes::Array", vector{
+	}, true, { TemplateParameterQualifier::NotClass }, ICON_VS_SYMBOL_ARRAY);
+	AddNative("array", "::DataModel::NativeTypes::Array", vector{
 		TemplateParameter{ "ELEMENT_TYPE", TemplateParameterQualifier::NotClass },
 		TemplateParameter{ "SIZE", TemplateParameterQualifier::Size }
-		}, true, { TemplateParameterQualifier::NotClass });
-	auto ref = AddNative("ref", "::DataModel::NativeTypes::Ref", vector{
+	}, true, { TemplateParameterQualifier::NotClass }, ICON_VS_LIST_ORDERED);
+	AddNative("ref", "::DataModel::NativeTypes::Ref", vector{
 		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
-		}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
-	auto own = AddNative("own", "::DataModel::NativeTypes::Own", vector{
+	}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer, TemplateParameterQualifier::Scalar }, ICON_VS_REFERENCES);
+	AddNative("own", "::DataModel::NativeTypes::Own", vector{
 		TemplateParameter{ "POINTEE", TemplateParameterQualifier::Class, TemplateParameterFlags::CanBeIncomplete }
-		}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer });
-	auto variant = AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
+	}, true, { TemplateParameterQualifier::NotClass, TemplateParameterQualifier::Pointer, TemplateParameterQualifier::Scalar }, ICON_VS_REFERENCES);
+	AddNative("variant", "::DataModel::NativeTypes::Variant", vector{
 		TemplateParameter{ "TYPES", TemplateParameterQualifier::NotClass, TemplateParameterFlags::Multiple }
-		}, true, { TemplateParameterQualifier::NotClass });
+		}, true, { TemplateParameterQualifier::NotClass }, ICON_VS_TASKLIST);
 
+	AddNative("map", "::DataModel::NativeTypes::Map", vector{
+		TemplateParameter{ "KEY_TYPE", TemplateParameterQualifier::Scalar },
+		TemplateParameter{ "VALUE_TYPE", TemplateParameterQualifier::NotClass, TemplateParameterFlags::CanBeIncomplete }
+	}, true, { TemplateParameterQualifier::NotClass }, ICON_VS_SYMBOL_OBJECT);
+
+	AddNative("json", "::DataModel::NativeTypes::JSON", {}, false, { TemplateParameterQualifier::NotClass }, ICON_VS_JSON);
+
+	string_view prefixes[] = { "b", "i", "u", "d", ""};
+	string_view types[] = { "bool", "int", "unsigned", "double", "float"};
+	for (int i = 0; i < 5; ++i)
+	{
+		for (int d = 2; d <= 4; ++d)
+		{
+			string name = format("{}vec{}", prefixes[i], d);
+			string real_name = format("tvec<{}, {}>", types[i], d);
+
+			AddNative(name, real_name, {}, false, { TemplateParameterQualifier::NotClass }, ICON_VS_LOCATION);
+		}
+	}
+
+	/// TODO: Color
+	/// TODO: Path
+	/// TODO: JSON
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
@@ -343,9 +367,9 @@ void EnumDefinition::FromJSON(json const& value)
 }
 
 
-BuiltinDefinition const* Schema::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers)
+BuiltinDefinition const* Schema::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers, string icon)
 {
-	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable, applicable_qualifiers);
+	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable, applicable_qualifiers, move(icon));
 }
 
 bool Schema::IsParent(TypeDefinition const* parent, TypeDefinition const* potential_child)

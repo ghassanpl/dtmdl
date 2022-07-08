@@ -15,6 +15,8 @@
 #include <ghassanpl/json_helpers.h>
 #include <ghassanpl/assuming.h>
 
+#include "codicons_font.h"
+
 using namespace outcome_v2_35644f5c;
 
 using namespace std;
@@ -32,3 +34,9 @@ string FreshName(string_view base, FUNC&& func)
 }
 
 void CheckError(result<void, string> val, string else_string = {});
+
+namespace ghassanpl
+{
+	template<typename T> void to_json(json& j, enum_flags<T> const& v) { j = json::array(); v.for_each([&j](auto v) { j.push_back(magic_enum::enum_name(v)); }); }
+	template<typename T> void from_json(json const& j, enum_flags<T>& v) { for (auto& f : j) v.set(magic_enum::enum_cast<T>((string_view)f).value()); }
+}

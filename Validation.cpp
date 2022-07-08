@@ -31,6 +31,63 @@ result<void, string> ValidateIdentifierName(string_view new_name)
 	return success();
 }
 
+result<void, string> ValidateTypeDefinition(TypeDefinition const* type, TemplateParameterQualifier qualifier)
+{
+	if (!type)
+		return failure("type must be set");
+
+	switch (qualifier)
+	{
+	case TemplateParameterQualifier::AnyType: break;
+	case TemplateParameterQualifier::Struct:
+		if (type->Type() != DefinitionType::Struct)
+			return "must be a struct type";
+		break;
+	case TemplateParameterQualifier::NotClass:
+		if (type->Type() == DefinitionType::Class)
+			return "must be a non-class type";
+		break;
+	case TemplateParameterQualifier::Enum:
+		if (type->Type() != DefinitionType::Enum)
+			return "must be an enum type";
+		break;
+	case TemplateParameterQualifier::Integral:
+	case TemplateParameterQualifier::Floating:
+	case TemplateParameterQualifier::Pointer:
+		if (type->Type() != DefinitionType::BuiltIn)
+			return "must be an integral type";
+		else
+		{
+			auto builtin_type = dynamic_cast<BuiltinDefinition const*>(type);
+			if (builtin_type && builtin_type->ApplicableQualifiers().is_set(qualifier) == false)
+				return format("must be a {} type", string_ops::ascii::tolower(magic_enum::enum_name(qualifier)));
+		}
+		break;
+	case TemplateParameterQualifier::Scalar:
+		if (type->IsEnum())
+			return success();
+		else if (type->Type() != DefinitionType::BuiltIn)
+		{
+			return failure("must be a type that is comparable");
+		}
+		else
+		{
+			auto builtin_type = dynamic_cast<BuiltinDefinition const*>(type);
+			if (builtin_type && builtin_type->ApplicableQualifiers().is_set(qualifier) == false)
+				return format("must be a {} type", string_ops::ascii::tolower(magic_enum::enum_name(qualifier)));
+		}
+		break;
+	case TemplateParameterQualifier::Class:
+		if (type->Type() != DefinitionType::Class)
+			return "must be a class type";
+		break;
+	default:
+		throw format("internal error: unimplemented template parameter qualifier `{}`", magic_enum::enum_name(qualifier));
+	}
+
+	return success();
+}
+
 result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param)
 {
 	if (param.Qualifier == TemplateParameterQualifier::Size)
@@ -45,45 +102,7 @@ result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, Templ
 
 	auto& arg_type = get<TypeReference>(arg);
 
-	if (!arg_type.Type)
-		return failure("type must be set");
-
-	switch (param.Qualifier)
-	{
-	case TemplateParameterQualifier::AnyType: break;
-	case TemplateParameterQualifier::Struct:
-		if (arg_type->Type() != DefinitionType::Struct)
-			return "must be a struct type";
-		break;
-	case TemplateParameterQualifier::NotClass:
-		if (arg_type->Type() == DefinitionType::Class)
-			return "must be a non-class type";
-		break;
-	case TemplateParameterQualifier::Enum:
-		if (arg_type->Type() != DefinitionType::Enum)
-			return "must be an enum type";
-		break;
-	case TemplateParameterQualifier::Integral:
-	case TemplateParameterQualifier::Floating:
-	case TemplateParameterQualifier::Pointer:
-		if (arg_type->Type() != DefinitionType::BuiltIn)
-			return "must be an integral type";
-		else
-		{
-			auto builtin_type = dynamic_cast<BuiltinDefinition const*>(arg_type.Type);
-			if (builtin_type && builtin_type->ApplicableQualifiers().is_set(param.Qualifier) == false)
-				return format("must be a {} type", string_ops::ascii::tolower(magic_enum::enum_name(param.Qualifier)));
-		}
-		break;
-	case TemplateParameterQualifier::Class:
-		if (arg_type->Type() != DefinitionType::Class)
-			return "must be a class type";
-		break;
-	default:
-		throw format("internal error: unimplemented template parameter qualifier `{}`", magic_enum::enum_name(param.Qualifier));
-	}
-
-	return success();
+	return ValidateTypeDefinition(arg_type.Type, param.Qualifier);
 }
 
 result<void, string> Database::ValidateTypeName(Def def, string const& new_name)

@@ -6,6 +6,8 @@
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
+#include "codicons_font.h"
+
 void Label(string_view s);
 
 template <typename ... T> struct concat;
@@ -245,6 +247,73 @@ struct VariantHandler : IBuiltInHandler
 	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
 } mVariantHandler;
 
+struct MapHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override;
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override;
+} mMapHandler;
+
+struct JSONHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override;
+	virtual void View(ConstValueDescriptor const&) const override;
+	virtual bool Edit(ValueDescriptor const&) const override;
+	virtual bool Visit(json& value, VisitorFunc visitor) const override { return false; }
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override { return false; }
+} mJSONHandler;
+
+template <typename T, size_t D>
+struct VecHandler : IBuiltInHandler
+{
+	virtual result<void, string> Initialize(TypeReference const& to_type, json& value) const override
+	{
+		value = json::array();
+		value.get_ref<json::array_t&>().resize(D, T{});
+		return success();
+	}
+	virtual void View(ConstValueDescriptor const&) const override
+	{
+
+	}
+	virtual bool Edit(ValueDescriptor const&) const override
+	{
+		return false;
+	}
+	virtual bool Visit(json& value, VisitorFunc visitor) const override
+	{
+		return false;
+	}
+	virtual bool Visit(json const& value, ConstVisitorFunc visitor) const override
+	{
+		return false;
+	}
+
+	static VecHandler<T, D> mVecHandler;
+};
+
+VecHandler<float, 2> VecHandler<float, 2>::mVecHandler;
+VecHandler<float, 3> VecHandler<float, 3>::mVecHandler;
+VecHandler<float, 4> VecHandler<float, 4>::mVecHandler;
+
+VecHandler<bool, 2> VecHandler<bool, 2>::mVecHandler;
+VecHandler<bool, 3> VecHandler<bool, 3>::mVecHandler;
+VecHandler<bool, 4> VecHandler<bool, 4>::mVecHandler;
+
+VecHandler<double, 2> VecHandler<double, 2>::mVecHandler;
+VecHandler<double, 3> VecHandler<double, 3>::mVecHandler;
+VecHandler<double, 4> VecHandler<double, 4>::mVecHandler;
+
+VecHandler<int, 2> VecHandler<int, 2>::mVecHandler;
+VecHandler<int, 3> VecHandler<int, 3>::mVecHandler;
+VecHandler<int, 4> VecHandler<int, 4>::mVecHandler;
+
+VecHandler<unsigned, 2> VecHandler<unsigned, 2>::mVecHandler;
+VecHandler<unsigned, 3> VecHandler<unsigned, 3>::mVecHandler;
+VecHandler<unsigned, 4> VecHandler<unsigned, 4>::mVecHandler;
+
 template <typename JSON_TYPE, typename FUNC>
 bool EditScalar(ValueDescriptor const& descriptor, FUNC&& func)
 {
@@ -259,9 +328,9 @@ bool EditScalar(ValueDescriptor const& descriptor, FUNC&& func)
 	}
 	else
 	{
-		auto issue = format("WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(descriptor.Value.type()));
+		auto issue = format(ICON_VS_WARNING "WARNING: The data stored in this value is not of the expected type (expecting '{}', got '{}')", typeid(JSON_TYPE).name(), magic_enum::enum_name(descriptor.Value.type()));
 		ImGui::TextColored({ 0,1,1,1 }, "%s", issue.c_str());
-		if (ImGui::SmallButton("Reset Value"))
+		if (ImGui::SmallButton(ICON_VS_REFRESH "Reset Value"))
 		{
 			CheckError(InitializeValue(descriptor.Type, descriptor.Value));
 			edited = true;
@@ -270,7 +339,7 @@ bool EditScalar(ValueDescriptor const& descriptor, FUNC&& func)
 
 	if (edited && descriptor.Store)
 	{
-		/// TODO: This LogDataChange(value_path, previous_val, value);
+		/// TODO: This descriptor.Store->LogDataChange(value_path, previous_val, value);
 	}
 	ImGui::PopID();
 	return edited;
@@ -325,6 +394,7 @@ bool I32Handler::Edit(ValueDescriptor const& descriptor) const
 	});
 	return false;
 }
+
 bool I64Handler::Edit(ValueDescriptor const& descriptor) const
 {
 	EditScalar<json::number_integer_t>(descriptor, [](auto& value, auto& descriptor) {
@@ -395,9 +465,9 @@ bool VoidHandler::Edit(ValueDescriptor const& descriptor) const
 {
 	if (!descriptor.Value.is_null())
 	{
-		auto issue = format("WARNING: The data stored in this value is not void (but '{}')", descriptor.Value.type_name());
+		auto issue = format(ICON_VS_WARNING "WARNING: The data stored in this value is not void (but '{}')", descriptor.Value.type_name());
 		ImGui::TextColored({ 0,1,1,1 }, "%s", issue.c_str());
-		if (ImGui::SmallButton("Reset Value"))
+		if (ImGui::SmallButton(ICON_VS_REFRESH "Reset Value"))
 		{
 			CheckError(InitializeValue(descriptor.Type, descriptor.Value));
 			/// TODO: if (descriptor.Store) LogDataChange(value_path, json{}, value);
@@ -419,12 +489,39 @@ bool ListHandler::Edit(ValueDescriptor const& descriptor) const
 	return false;
 }
 
+bool MapHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	EditScalar<json::object_t>(descriptor, [](auto& value, auto& descriptor) {
+
+		return false;
+		//return ImGui::IsItemDeactivatedAfterEdit();
+		});
+	return false;
+}
+
+bool JSONHandler::Edit(ValueDescriptor const& descriptor) const
+{
+	return false;
+}
+
+/// TODO: Actually fill these visitors!
+
 bool ListHandler::Visit(json& value, VisitorFunc visitor) const
 {
 	return false;
 }
 
 bool ListHandler::Visit(json const& value, ConstVisitorFunc visitor) const
+{
+	return false;
+}
+
+bool MapHandler::Visit(json& value, VisitorFunc visitor) const
+{
+	return false;
+}
+
+bool MapHandler::Visit(json const& value, ConstVisitorFunc visitor) const
 {
 	return false;
 }
@@ -486,6 +583,7 @@ result<void, string> StringHandler::Initialize(TypeReference const& type, json& 
 result<void, string> BytesHandler::Initialize(TypeReference const& type, json& value) const { value = json::binary_t{}; return success(); }
 result<void, string> FlagsHandler::Initialize(TypeReference const& type, json& value) const { value = uint64_t{}; return success(); }
 result<void, string> ListHandler::Initialize(TypeReference const& type, json& value) const { value = json::array(); return success(); }
+result<void, string> MapHandler::Initialize(TypeReference const& type, json& value) const { value = json::object(); return success(); }
 result<void, string> ArrayHandler::Initialize(TypeReference const& type, json& value) const
 {
 	value = json::array();
@@ -513,6 +611,7 @@ result<void, string> VariantHandler::Initialize(TypeReference const& type, json&
 	auto& element_type = get<TypeReference>(type.TemplateArguments.at(0));
 	return InitializeValue(element_type, arr.at(1));
 }
+result<void, string> JSONHandler::Initialize(TypeReference const& type, json& value) const { value = json{}; return success(); }
 
 template <typename... ARGS>
 void Text(string_view str, ARGS&&... args)
@@ -537,10 +636,12 @@ void StringHandler::View(ConstValueDescriptor const& descriptor) const { Text("{
 void BytesHandler::View(ConstValueDescriptor const& descriptor) const { Text("<bytes>"); }
 void FlagsHandler::View(ConstValueDescriptor const& descriptor) const { Text("<flags>"); }
 void ListHandler::View(ConstValueDescriptor const& descriptor) const { Text("<list>"); }
+void MapHandler::View(ConstValueDescriptor const& descriptor) const { Text("<map>"); }
 void ArrayHandler::View(ConstValueDescriptor const& descriptor) const { Text("<array>"); }
 void RefHandler::View(ConstValueDescriptor const& descriptor) const { Text("<ref>"); }
 void OwnHandler::View(ConstValueDescriptor const& descriptor) const { Text("<own>"); }
 void VariantHandler::View(ConstValueDescriptor const& descriptor) const { Text("<variant>"); }
+void JSONHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", descriptor.Value.dump()); }
 
 map<string, IBuiltInHandler const*, less<>> const mBuiltIns = {
 	{"void", &mVoidHandler},
@@ -563,6 +664,28 @@ map<string, IBuiltInHandler const*, less<>> const mBuiltIns = {
 	{"ref", &mRefHandler},
 	{"own", &mOwnHandler},
 	{"variant", &mVariantHandler},
+	{"map", &mMapHandler},
+	{"json", &mJSONHandler},
+
+	{"vec2", &VecHandler<float, 2>::mVecHandler},
+	{"vec3", &VecHandler<float, 3>::mVecHandler},
+	{"vec4", &VecHandler<float, 4>::mVecHandler},
+
+	{"dvec2", &VecHandler<double, 2>::mVecHandler},
+	{"dvec3", &VecHandler<double, 3>::mVecHandler},
+	{"dvec4", &VecHandler<double, 4>::mVecHandler},
+
+	{"ivec2", &VecHandler<int, 2>::mVecHandler},
+	{"ivec3", &VecHandler<int, 3>::mVecHandler},
+	{"ivec4", &VecHandler<int, 4>::mVecHandler},
+
+	{"uvec2", &VecHandler<unsigned, 2>::mVecHandler},
+	{"uvec3", &VecHandler<unsigned, 3>::mVecHandler},
+	{"uvec4", &VecHandler<unsigned, 4>::mVecHandler},
+
+	{"bvec2", &VecHandler<bool, 2>::mVecHandler},
+	{"bvec3", &VecHandler<bool, 3>::mVecHandler},
+	{"bvec4", &VecHandler<bool, 4>::mVecHandler},
 };
 
 using ConversionFunction = result<void, string>(json&, TypeReference const&, TypeReference const&);
@@ -580,7 +703,7 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 		AddConversion(type_pair, [](json& value, TypeReference const&, TypeReference const&) -> result<void, string> {
 			value = (B)(A)value;
 			return success();
-			});
+		});
 	};
 	auto AddConversionForEachPair = [&]<typename... PAIRS>(type_identity<tuple<PAIRS...>>, auto && conversion_func) {
 		(conversion_func(type_identity<PAIRS>{}), ...);
@@ -598,7 +721,7 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 			value = ::std::to_string((A)value);
 			/// TODO: using to_chars would be faster
 			return success();
-			});
+		});
 	});
 
 	AddConversionForTypeCrossProduct(type_identity<tuple<string>>{}, type_identity<numeric_type_list>{}, [&]<typename A, typename B>(type_identity<pair<A, B>> type_pair) {
@@ -608,7 +731,7 @@ map<pair<string, string>, function<ConversionFunction>, less<>> const mConversio
 			ignore = from_chars(to_address(begin(strref)), to_address(end(strref)), dest_value);
 			value = dest_value;
 			return success();
-			});
+		});
 	});
 
 	/// TODO: Add more conversions:
@@ -645,7 +768,7 @@ void ViewValue(TypeReference const& type, json& value, json const& field_attribu
 {
 	if (!type)
 	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		ImGui::TextColored({ 1,0,0,1 }, ICON_VS_ERROR "Error: Value has no type");
 		return;
 	}
 
@@ -669,7 +792,7 @@ bool EditValue(TypeReference const& type, json& value, json const& field_attribu
 {
 	if (!type)
 	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
+		ImGui::TextColored({ 1,0,0,1 }, ICON_VS_ERROR "Error: Value has no type");
 		return false;
 	}
 
@@ -759,10 +882,9 @@ result<void, string> Convert(TypeReference const& from, TypeReference const& to,
 bool VisitValue(TypeReference const& type, json& value, VisitorFunc visitor)
 {
 	if (!type)
-	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
 		return false;
-	}
+
+	/// TODO: This
 
 	switch (type.Type->Type())
 	{
@@ -782,10 +904,9 @@ bool VisitValue(TypeReference const& type, json& value, VisitorFunc visitor)
 bool VisitValue(TypeReference const& type, json const& value, ConstVisitorFunc visitor)
 {
 	if (!type)
-	{
-		ImGui::TextColored({ 1,0,0,1 }, "Error: Value has no type");
 		return false;
-	}
+
+	/// TODO: This
 
 	switch (type.Type->Type())
 	{

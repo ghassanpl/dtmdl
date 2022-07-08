@@ -46,4 +46,6 @@ private:
 	static string FormatTypeReference(Database const& db, TypeReference const& ref);
 	static string FormatTemplateArgument(Database const& db, TemplateArgument const& arg);
 	static string FormatNamespace(Database const& db);
+
+	void AdditionalMembers(SimpleOutputter& out, Database const& db, TypeDefinition const* type);
 };
