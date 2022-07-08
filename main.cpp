@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include "imgui_impl_sdl.h"
+#include "imgui_impl_sdlrenderer.h"
 #include "UICommon.h"
 #include <SDL2/SDL.h>
 #undef main
@@ -30,7 +32,7 @@ struct ErrorModal : IModal
 	virtual void Do() override
 	{
 		if (auto str = get_if<string>(&Message))
-			Label(*str);
+			TextU(*str);
 		else
 			get<1>(Message)();
 		ImGui::Spacing();
@@ -47,7 +49,7 @@ struct SuccessModal : IModal
 	virtual void Do() override
 	{
 		if (auto str = get_if<string>(&Message))
-			Label(*str);
+			TextU(*str);
 		else
 			get<1>(Message)();
 		ImGui::Spacing();
@@ -68,7 +70,7 @@ void OpenModal(ARGS&&... args)
 /// TODO: Move this away from depending on Database& db
 bool TypeNameEditor(Database& db, TypeDefinition const* def)
 {
-	return GenericEditor<TypeDefinition const*, string>("Type Name", db, def,
+	return GenericEditor<TypeDefinition const*, string>("Type Name", def,
 		bind_front(&Database::ValidateTypeName, &db),
 		[](TypeDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -82,7 +84,7 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 
 bool EnumeratorNameEditor(Database& db, EnumeratorDefinition const* def)
 {
-	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Name", db, def,
+	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Name", def,
 		bind_front(&Database::ValidateEnumeratorName, &db),
 		[](EnumeratorDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -155,7 +157,7 @@ bool EnumeratorValueEditor(Database& db, EnumeratorDefinition const* def)
 
 bool EnumeratorDescriptiveNameEditor(Database& db, EnumeratorDefinition const* def)
 {
-	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Descriptive Name", db, def,
+	return GenericEditor<EnumeratorDefinition const*, string>("Enumerator Descriptive Name", def,
 		[](EnumeratorDefinition const* def, string const& value) -> result<void, string> { return success(); },
 		[](EnumeratorDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -166,16 +168,16 @@ bool EnumeratorDescriptiveNameEditor(Database& db, EnumeratorDefinition const* d
 		[](EnumeratorDefinition const* def) -> auto const& { return def->DescriptiveName; },
 		[](EnumeratorDefinition const* def) { 
 			if (def->DescriptiveName.empty())
-				ImGui::TextDisabled("%s", def->Name.c_str());
+				TextUD(def->Name);
 			else
-				Label(def->DescriptiveName);
+				TextU(def->DescriptiveName);
 		}
 	);
 }
 
 bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 {
-	return GenericEditor<RecordDefinition const*, TypeReference>("Base Type", db, def,
+	return GenericEditor<RecordDefinition const*, TypeReference>("Base Type", def,
 		bind_front(&Database::ValidateRecordBaseType, &db),
 		[&db](RecordDefinition const* def, TypeReference& current) {
 			using namespace ImGui;
@@ -203,7 +205,7 @@ bool RecordBaseTypeEditor(Database& db, RecordDefinition const* def)
 
 bool FieldNameEditor(Database& db, FieldDefinition const* def)
 {
-	return GenericEditor<FieldDefinition const*, string>("Field Name", db, def,
+	return GenericEditor<FieldDefinition const*, string>("Field Name", def,
 		bind_front(&Database::ValidateFieldName, &db),
 		[](FieldDefinition const* def, string& name) {
 			using namespace ImGui;
@@ -217,7 +219,7 @@ bool FieldNameEditor(Database& db, FieldDefinition const* def)
 
 bool FieldTypeEditor(Database& db, FieldDefinition const* def)
 {
-	return GenericEditor<FieldDefinition const*, TypeReference>("Field Type", db, def,
+	return GenericEditor<FieldDefinition const*, TypeReference>("Field Type", def,
 		&ValidateFieldType,
 		[&db](FieldDefinition const* field, TypeReference& current) {
 			using namespace ImGui;
@@ -293,18 +295,18 @@ void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, 
 	switch (settings.first)
 	{
 	case 0:
-		Label("NOTE: Removing this field will also remove all data stored in this field!");
+		TextU("NOTE: Removing this field will also remove all data stored in this field!");
 		break;
 	case 1:
 	{
 		auto changed = Change(db, usage);
-		Label(format("Change: var {0} : {1}; -> var {0} : {2};", usage.Field->Name, usage.Field->FieldType.ToString(), changed.ToString()));
+		TextF("Change: var {0} : {1}; -> var {0} : {2};", usage.Field->Name, usage.Field->FieldType.ToString(), changed.ToString());
 		Spacing();
 	}
 	if (usage.References.size() == 1 && usage.References[0].empty())
-		Label("NOTE: Changing the field type to 'void' will also remove all data stored in this field!");
+		TextU("NOTE: Changing the field type to 'void' will also remove all data stored in this field!");
 	else
-		Label("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
+		TextU("NOTE: Changing the field type will trigger a data update which may destroy or corrupt data held in this field!");
 	break;
 	}
 }
@@ -359,7 +361,7 @@ result<void, string> ApplyChangeOption(Database& db, TypeIsBaseTypeOf const& usa
 void ShowUsageHandleUI(Database const& db, TypeDefinition const* def_to_delete, pair<int, std::any>& settings, TypeHasDataInDataStore const& usage)
 {
 	settings.first = 0;
-	Label("NOTE: All data of this type will be deleted");
+	TextU("NOTE: All data of this type will be deleted");
 	/// TODO: Option to perform a data export of just this type
 }
 
@@ -393,9 +395,7 @@ struct DeleteFieldModal : IModal
 	{
 		using namespace ImGui;
 
-		auto text = format("You are trying to delete the field '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mField->ParentRecord->Name(), mField->Name, mStores.size());
-
-		Label(text);
+		TextF("You are trying to delete the field '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mField->ParentRecord->Name(), mField->Name, mStores.size());
 
 		size_t i = 0;
 		for (auto& store : mStores)
@@ -442,10 +442,7 @@ struct DeleteEnumeratorModal : IModal
 	{
 		using namespace ImGui;
 
-		auto text = format("You are trying to delete the enumerator '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mEnumerator->ParentEnum->Name(), mEnumerator->Name, mStores.size());
-
-		Label(text);
-
+		TextF("You are trying to delete the enumerator '{}.{}' which is in use in {} data stores. Please decide how to handle each store:", mEnumerator->ParentEnum->Name(), mEnumerator->Name, mStores.size());
 		size_t i = 0;
 		for (auto& store : mStores)
 		{
@@ -493,9 +490,7 @@ struct DeleteTypeModal : IModal
 	{
 		using namespace ImGui;
 
-		auto text = format("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mType->Name(), mUsages.size());
-
-		Label(text);
+		TextF("You are trying to delete the type '{}' which is in use in {} places. Please decide how to handle each use:", mType->Name(), mUsages.size());
 
 		int i = 0;
 		for (auto& usage : mUsages)
@@ -582,11 +577,29 @@ void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 	);
 }
 
+bool FieldFlagsEditor(Database& db, FieldDefinition const* field)
+{
+	return GenericEditor<FieldDefinition const*, enum_flags<FieldFlags>>("Field Flags", field,
+		[](FieldDefinition const* def, enum_flags<FieldFlags> const& value) -> result<void, string> { return success(); },
+		[](FieldDefinition const*, enum_flags<FieldFlags>& flags) {
+			for (auto& flag : magic_enum::enum_entries<FieldFlags>())
+			{
+				string fuck = string{ flag.second };
+				bool val = flags.is_set(flag.first);
+				if (ImGui::Checkbox(fuck.c_str(), &val))
+					flags.set_to(val, flag.first);
+			}
+		},
+		bind_front(&Database::SetFieldFlags, &db),
+		[](FieldDefinition const* def) -> auto const& { return def->Flags; }
+	);
+}
+
 void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 {
 	using namespace ImGui;
-	Label("Name: "); SameLine(); TypeNameEditor(db, def);
-	Label("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
+	TextU("Name: "); SameLine(); TypeNameEditor(db, def);
+	TextU("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
 
 	if (Button(ICON_VS_SYMBOL_FIELD "Add Field"))
 	{
@@ -614,13 +627,12 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 			if (field->ParentRecord != def)
 			{
 				TableNextColumn();
-				auto name = format("{}.{}", field->ParentRecord->Name(), field->Name);
-				TextDisabled("%s", name.c_str());
+				TextDisabledF("{}.{}", field->ParentRecord->Name(), field->Name);
 				TableNextColumn();
-				auto type = format("{}", field->FieldType.ToString());
-				TextDisabled("%s", type.c_str());
+				TextDisabledF("{}", field->FieldType.ToString());
 				TableNextColumn();
-				Label("Attributes");
+				TextF("{}", field->Flags);
+				//Label("Attributes");
 				TableNextColumn();
 				SmallButton("Move to Child");
 			}
@@ -633,7 +645,8 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				SetNextItemWidth(GetContentRegionAvail().x);
 				FieldTypeEditor(db, field);
 				TableNextColumn();
-				Label("Attributes");
+				if (def->IsClass())
+					FieldFlagsEditor(db, field);
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
@@ -672,7 +685,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 void EditEnum(Database& db, EnumDefinition const* enoom)
 {
 	using namespace ImGui;
-	Label("Name: "); SameLine(); TypeNameEditor(db, enoom);
+	TextU("Name: "); SameLine(); TypeNameEditor(db, enoom);
 
 	/// TODO: Edit base type: [none] or integer types
 
@@ -715,7 +728,7 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 			SetNextItemWidth(GetContentRegionAvail().x);
 			EnumeratorDescriptiveNameEditor(db, enumerator);
 			TableNextColumn();
-			Label("Attributes");
+			TextU("Attributes");
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
@@ -765,11 +778,18 @@ void TypesTab()
 		mOpenType = mCurrentDatabase->AddNewEnum().value();
 	SameLine();
 	Button("Add Union"); SameLine();
-	Button("Add Alias");
+	Button("Add Alias"); SameLine();
+
+
+	static int sort = 0;
+	RadioButton("Sort by Name", &sort, 0); SameLine();
+	RadioButton("Sort by Type", &sort, 1);
 
 	Spacing();
 	Separator();
 	Spacing();
+
+	BeginChild("Types", { 0.0f, 0.0f });
 
 	for (auto def : mCurrentDatabase->Definitions())
 	{
@@ -783,7 +803,7 @@ void TypesTab()
 
 		if (auto strukt = dynamic_cast<StructDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->IconName().c_str()))
+			if (CollapsingHeader(def->IconNameWithParent().c_str()))
 			{
 				Indent();
 				EditRecord(*mCurrentDatabase, strukt, true);
@@ -792,7 +812,7 @@ void TypesTab()
 		}
 		else if (auto klass = dynamic_cast<ClassDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->IconName().c_str()))
+			if (CollapsingHeader(def->IconNameWithParent().c_str()))
 			{
 				Indent();
 				EditRecord(*mCurrentDatabase, klass, false);
@@ -801,7 +821,7 @@ void TypesTab()
 		}
 		else if (auto eenoom = dynamic_cast<EnumDefinition const*>(def))
 		{
-			if (CollapsingHeader(def->IconName().c_str()))
+			if (CollapsingHeader(def->IconNameWithParent().c_str()))
 			{
 				Indent();
 				EditEnum(*mCurrentDatabase, eenoom);
@@ -810,6 +830,8 @@ void TypesTab()
 		}
 		PopID();
 	}
+
+	EndChild();
 }
 
 void DataTab();

@@ -123,8 +123,15 @@ result<void, string> Database::ValidateFieldName(Fld def, string const& new_name
 	if (auto result = ValidateIdentifierName(new_name); result.has_error())
 		return result;
 
-	auto rec = def->ParentRecord;
-	for (auto& field : rec->mFields)
+	TypeDefinition const* rec = def->ParentRecord;
+	while (rec)
+	{
+		if (new_name == rec->Name())
+			return failure("field cannot have the same name as the record it is in (or any base records)");
+		rec = rec->mBaseType.Type;
+	}
+
+	for (auto& field : def->ParentRecord->mFields)
 	{
 		if (field.get() == def)
 			continue;

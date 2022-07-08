@@ -2,6 +2,10 @@
 
 #include "UICommon.h"
 
+#include "Database.h"
+#include "Values.h"
+#include "Validation.h"
+
 void DoDeleteValueUI(DataStore& store, string_view name)
 {
 	ImGui::SmallButton(ICON_VS_TRASH "Delete Value");
@@ -92,12 +96,12 @@ void DataTab()
 
 							TableNextColumn();
 							/// FieldNameEditor(db, field);
-							Label(name); SameLine(); SmallButton(ICON_VS_EDIT "Edit");
+							TextU(name); SameLine(); SmallButton(ICON_VS_EDIT "Edit");
 							TableNextColumn();
 							SetNextItemWidth(GetContentRegionAvail().x);
 							/// FieldTypeEditor(db, field);
 							TypeReference old_type{ mCurrentDatabase->Schema(), value.at("type") };
-							GenericEditor<json*, TypeReference>("Type", *mCurrentDatabase, &value,
+							GenericEditor<json*, TypeReference>("Type", &value,
 								/// validator
 								[&](json* value, TypeReference const& new_type) -> result<void, string> {
 									if (ResultOfConversion(old_type, new_type, value->at("value")) == ConversionResult::ConversionImpossible)

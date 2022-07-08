@@ -7,8 +7,9 @@ enum class DefinitionType
 	Struct,
 	Class,
 
-	/// Union
-	/// Alias
+	Union,
+	Alias,
+	Attribute,
 };
 
 struct TypeDefinition;
@@ -39,6 +40,11 @@ struct TypeReference
 	void FromJSON(Schema const& schema, json const& value);
 
 	explicit operator bool() const noexcept { return Type != nullptr; }
+
+	void CalculateDependencies(set<TypeDefinition const*>& dependencies) const;
+
+	/// TODO: When C++23's ranges/zip comes along:
+	/// auto TemplatePairs() { return views::zip(Type->TemplateParameters(), TemplateArguments); }
 };
 
 using TemplateArgument = variant<uint64_t, TypeReference>;
@@ -79,6 +85,7 @@ struct TemplateParameter
 };
 
 struct RecordDefinition;
+struct EnumDefinition;
 struct Schema;
 
 struct TypeDefinition
@@ -96,10 +103,16 @@ struct TypeDefinition
 	bool IsEnum() const noexcept { return Type() == DefinitionType::Enum; }
 
 	RecordDefinition const* AsRecord() const noexcept;
+	EnumDefinition const* AsEnum() const noexcept;
 
 	auto const& Schema() const noexcept { return mSchema; }
 	auto const& Name() const noexcept { return mName; }
 	string IconName() const noexcept { return string{ Icon() } + Name(); }
+	string IconNameWithParent() const noexcept { 
+		if (mBaseType)
+			return format("{}{} : {}", Icon(), Name(), mBaseType->Name());
+		return IconName();
+	}
 	auto const& BaseType() const noexcept { return mBaseType; }
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
 	auto const& Attributes() const noexcept { return mAttributes; }
@@ -108,6 +121,8 @@ struct TypeDefinition
 	virtual void FromJSON(json const& value);
 
 	virtual string_view Icon() const noexcept = 0;
+
+	virtual void CalculateDependencies(set<TypeDefinition const*>& dependencies) const = 0;
 
 protected:
 
@@ -159,6 +174,11 @@ struct FieldDefinition
 	void FromJSON(json const& value);
 
 	string ToString() const { return format("var {} : {}; // {}", Name, FieldType.ToString(), Attributes.dump()); }
+
+	void CalculateDependencies(set<TypeDefinition const*>& dependencies) const
+	{
+		FieldType.CalculateDependencies(dependencies);
+	}
 };
 
 struct RecordDefinition : TypeDefinition
@@ -180,6 +200,13 @@ struct RecordDefinition : TypeDefinition
 	virtual json ToJSON() const override;
 	virtual void FromJSON(json const& value) override;
 
+	virtual void CalculateDependencies(set<TypeDefinition const*>& dependencies) const override
+	{
+		mBaseType.CalculateDependencies(dependencies);
+		for (auto& field : mFields)
+			field->CalculateDependencies(dependencies);
+	}
+
 protected:
 
 	friend struct Schema;
@@ -193,9 +220,19 @@ protected:
 struct StructDefinition : RecordDefinition
 {
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Struct; }
-	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
 	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_STRUCTURE; };
+
+protected:
+
+	using RecordDefinition::RecordDefinition;
+};
+
+struct AttributeDefinition : RecordDefinition
+{
+	virtual DefinitionType Type() const noexcept override { return DefinitionType::Attribute; }
+
+	virtual string_view Icon() const noexcept { return ICON_VS_TAG; };
 
 protected:
 
@@ -205,7 +242,6 @@ protected:
 struct ClassDefinition : RecordDefinition
 {
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Class; }
-	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
 	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_CLASS; };
 
@@ -262,8 +298,11 @@ struct EnumDefinition : TypeDefinition
 	virtual void FromJSON(json const& value) override;
 
 	auto Enumerators() const noexcept { return mEnumerators | views::transform([](unique_ptr<EnumeratorDefinition> const& element) -> EnumeratorDefinition const* const { return element.get(); }); }
+	auto EnumeratorCount() const noexcept { return mEnumerators.size(); }
 
 	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_ENUM; };
+
+	virtual void CalculateDependencies(set<TypeDefinition const*>& dependencies) const override {}
 
 protected:
 
@@ -286,6 +325,8 @@ struct BuiltinDefinition : TypeDefinition
 	//virtual void Visit(Visitor& visitor) const override { visitor.Visit(*this); }
 
 	virtual string_view Icon() const noexcept { return mIcon; };
+
+	virtual void CalculateDependencies(set<TypeDefinition const*>& dependencies) const override {}
 
 protected:
 

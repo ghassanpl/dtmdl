@@ -3,6 +3,7 @@
 #include "Schema.h"
 
 RecordDefinition const* TypeDefinition::AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
+EnumDefinition const* TypeDefinition::AsEnum() const noexcept { return IsEnum() ? static_cast<EnumDefinition const*>(this) : nullptr; }
 
 string to_string(TypeReference const& tr)
 {
@@ -302,9 +303,8 @@ Schema::Schema()
 		}
 	}
 
-	/// TODO: Color
-	/// TODO: Path
-	/// TODO: JSON
+	/// TODO: Color ? Or should we leave that to attributes?
+	/// TODO: Path ?
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const
@@ -385,4 +385,24 @@ bool Schema::IsParent(TypeDefinition const* parent, TypeDefinition const* potent
 	}
 
 	return false;
+}
+
+void TypeReference::CalculateDependencies(set<TypeDefinition const*>& dependencies) const
+{
+	if (!Type)
+		return;
+
+	dependencies.insert(Type);
+
+	for (size_t i =0; i< Type->TemplateParameters().size(); ++i)
+	{
+		auto& param = Type->TemplateParameters()[i];
+		auto& arg = TemplateArguments[i];
+
+		if (param.MustBeComplete())
+		{
+			if (auto ref = get_if<TypeReference>(&arg))
+				ref->CalculateDependencies(dependencies);
+		}
+	}
 }

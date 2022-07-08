@@ -1,12 +1,21 @@
 #include "pch.h"
 
 #include "UICommon.h"
+#include "Database.h"
+#include "Validation.h"
 
 vector<function<void()>> LateExec;
 
-void Label(string_view s)
+void TextU(string_view s)
 {
 	ImGui::TextUnformatted(s.data(), s.data() + s.size());
+}
+
+void TextUD(string_view s)
+{
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+	ImGui::TextUnformatted(s.data(), s.data() + s.size());
+	ImGui::PopStyleColor();
 }
 
 TypeDefinition const* mOpenType = nullptr;
@@ -88,3 +97,6 @@ if (BeginCombo(label, current.c_str(), ImGuiComboFlags_HeightLargest))
 
 	PopID();
 }
+
+void Display(string const& val) { TextU(val); }
+void Display(TypeReference const& val) { TextU(val.ToString()); }

@@ -294,6 +294,26 @@ result<void, string> Database::SetFieldType(Fld def, TypeReference const& type)
 	return success();
 }
 
+result<void, string> Database::SetFieldFlags(Fld def, enum_flags<FieldFlags> flags)
+{
+	/// Validation
+	/// always true
+	
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetFieldFlags"}, {"record", def->ParentRecord->Name()}, {"field", def->Name}, {"flags", flags }, {"previous", def->Flags} });
+
+	/// Schema Change
+	mut(def)->Flags = flags;
+
+	/// DataStore update
+	/// No need
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
 result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t field_index_b)
 {
 	/// Validation

@@ -1,15 +1,27 @@
 #pragma once
 
-#include "imgui_impl_sdl.h"
-#include "imgui_impl_sdlrenderer.h"
+#include <imgui.h>
 #include <imgui_stdlib.h>
 #include "ImGuiHelpers.h"
 
-#include "Database.h"
-#include "Validation.h"
-#include "Values.h"
+struct TypeDefinition;
+struct TypeReference;
+struct Database;
 
-void Label(string_view s);
+void TextU(string_view s);
+void TextUD(string_view s);
+
+template <typename... ARGS>
+void TextF(string_view fmt, ARGS&&... args)
+{
+	TextU(vformat(fmt, make_format_args(forward<ARGS>(args)...)));
+}
+
+template <typename... ARGS>
+void TextDisabledF(string_view fmt, ARGS&&... args)
+{
+	TextUD(vformat(fmt, make_format_args(forward<ARGS>(args)...)));
+}
 
 template <typename EDITING_OBJECT, typename OBJECT_PROPERTY>
 using ValidateFunc = function<result<void, string>(EDITING_OBJECT, OBJECT_PROPERTY const&)>;
@@ -26,11 +38,16 @@ using GetterFunc = function<OBJECT_PROPERTY(EDITING_OBJECT)>;
 template <typename EDITING_OBJECT>
 using DisplayFunc = function<void(EDITING_OBJECT)>;
 
-inline void Display(string const& val) { Label(val); }
-inline void Display(TypeReference const& val) { Label(val.ToString()); }
+void Display(string const& val);
+void Display(TypeReference const& val);
+template <typename T>
+void Display(enum_flags<T> val)
+{
+	Display(format("{}", val));
+}
 
 template <typename E, typename P>
-bool GenericEditor(const char* id, Database& db, E def,
+bool GenericEditor(const char* id, E def,
 	/*ValidateFunc<E, P>*/ auto&& validate,
 	/*EditorFunc<E, P>*/ auto&& editor,
 	/*ApplyFunc<E, P>*/ auto&& apply,
@@ -122,13 +139,26 @@ bool GenericEditor(const char* id, Database& db, E def,
 	return changed;
 }
 
+template <typename T>
+bool FlagEditor(enum_flags<T>& flags, string_view name)
+{
+	return GenericEditor<enum_flags<T>*, enum_flags<T>>(name, &flags,
+		[](enum_flags<T>* def, enum_flags<T> const& value) -> result<void, string> { return success(); },
+		[](enum_flags<T>*, enum_flags<T>& name) {
+			
+		},
+		[](enum_flags<T>* def, enum_flags<T> const& value) -> result<void, string> { *def = value; },
+		[](enum_flags<T>* def) -> auto const& { return *def; }
+	);
+}
+
 template <typename FUNC>
 void DoConfirmUI(string confirm_text, FUNC&& func)
 {
 	using namespace ImGui;
 	if (BeginPopupContextItem(confirm_text.c_str(), 0))
 	{
-		Label(confirm_text);
+		TextU(confirm_text);
 		if (Button("Yes"))
 		{
 			func();

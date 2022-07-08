@@ -59,7 +59,7 @@ struct SimpleOutputter
 	void WriteEnd(string_view fmt, ARGS&&... args) { Unindent(); WriteLine(fmt, forward<ARGS>(args)...); }
 
 	void Indent() { Indentation++; }
-	void Unindent() { Indentation--; }
+	void Unindent() { if (Indentation == 0) throw "invalid unindent"; Indentation--; }
 };
 
 string CppDeclarationFormat::FormatName()
@@ -104,25 +104,25 @@ string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition c
 		{"map", "::DataModel::NativeTypes::Map"},
 		{"json", "::DataModel::NativeTypes::JSON"},
 
-		{"vec2", "::DataModel::NativeTypes::vec2"},
-		{"vec3", "::DataModel::NativeTypes::vec3"},
-		{"vec4", "::DataModel::NativeTypes::vec4"},
+		{"vec2", "::DataModel::NativeTypes::vec<2, float>"},
+		{"vec3", "::DataModel::NativeTypes::vec<3, float>"},
+		{"vec4", "::DataModel::NativeTypes::vec<4, float>"},
 
-		{"dvec2", "::DataModel::NativeTypes::dvec2"},
-		{"dvec3", "::DataModel::NativeTypes::dvec3"},
-		{"dvec4", "::DataModel::NativeTypes::dvec4"},
+		{"dvec2", "::DataModel::NativeTypes::vec<2, double>"},
+		{"dvec3", "::DataModel::NativeTypes::vec<3, double>"},
+		{"dvec4", "::DataModel::NativeTypes::vec<4, double>"},
 
-		{"ivec2", "::DataModel::NativeTypes::ivec2"},
-		{"ivec3", "::DataModel::NativeTypes::ivec3"},
-		{"ivec4", "::DataModel::NativeTypes::ivec4"},
+		{"ivec2", "::DataModel::NativeTypes::vec<2, int>"},
+		{"ivec3", "::DataModel::NativeTypes::vec<3, int>"},
+		{"ivec4", "::DataModel::NativeTypes::vec<4, int>"},
 
-		{"uvec2", "::DataModel::NativeTypes::uvec2"},
-		{"uvec3", "::DataModel::NativeTypes::uvec3"},
-		{"uvec4", "::DataModel::NativeTypes::uvec4"},
+		{"uvec2", "::DataModel::NativeTypes::vec<2, unsigned>"},
+		{"uvec3", "::DataModel::NativeTypes::vec<3, unsigned>"},
+		{"uvec4", "::DataModel::NativeTypes::vec<4, unsigned>"},
 
-		{"bvec2", "::DataModel::NativeTypes::bvec2"},
-		{"bvec3", "::DataModel::NativeTypes::bvec3"},
-		{"bvec4", "::DataModel::NativeTypes::bvec4"},
+		{"bvec2", "::DataModel::NativeTypes::vec<2, bool>"},
+		{"bvec3", "::DataModel::NativeTypes::vec<3, bool>"},
+		{"bvec4", "::DataModel::NativeTypes::vec<4, bool>"},
 	};
 
 	auto it = cpp_builtin_type_names.find(type->Name());
@@ -153,7 +153,6 @@ string CppDeclarationFormat::FormatNamespace(Database const& db)
 
 void CppDeclarationFormat::AdditionalMembers(SimpleOutputter& out, Database const& db, TypeDefinition const* type)
 {
-	out.WriteLine("");
 	string additionals_name;
 	if (db.Namespace.empty())
 		additionals_name = format("DB_ADDITIONAL_FIELDS_FOR_{}", type->Name());
@@ -166,35 +165,89 @@ void CppDeclarationFormat::AdditionalMembers(SimpleOutputter& out, Database cons
 
 void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, ClassDefinition const* klass)
 {
+	/*
 	if (mWrittenTypes.contains(klass)) return;
 	if (klass->BaseType().Type)
 	{
 		WriteClass(out, db, dynamic_cast<ClassDefinition const*>(klass->BaseType().Type));
 		out.WriteLine("");
 	}
+	*/
 
 	if (klass->BaseType().Type)
 		out.WriteStart("class {} : {} {{", klass->Name(), FormatTypeReference(db, klass->BaseType()));
 	else
 		out.WriteStart("class {} {{", klass->Name());
+
+	out.Unindent();
 	out.WriteLine("public:");
+	out.Indent();
+
+	bool any_accessors = false;
+	bool any_privates = false;
+
 	for (auto& field : klass->Fields())
 	{
-		out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
+		if (!field->Flags.contain(FieldFlags::Private))
+			out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
+		else
+			any_privates = true;
+		any_accessors |= (field->Flags.contain(FieldFlags::Getter) || field->Flags.contain(FieldFlags::Setter));
+	}
+
+	out.WriteLine("");
+
+	if (any_accessors)
+	{
+
+		for (auto& field : klass->Fields())
+		{
+			if (field->Flags.contain(FieldFlags::Getter))
+				out.WriteLine("auto const& {1}() const noexcept {{ return {2}{1}; }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
+			if (field->Flags.contain(FieldFlags::Setter))
+			{
+				out.WriteLine("void Set{1}({0}&& value) const noexcept {{ {2}{1} = ::std::move<{0}>(value); }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
+				out.WriteLine("void Set{1}({0} const& value) const noexcept {{ {2}{1} = value; }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
+			}
+		}
+
+		out.WriteLine("");
 	}
 	
+	if (any_privates)
+	{
+		out.Unindent();
+		out.WriteLine("private:");
+		out.Indent();
+
+		for (auto& field : klass->Fields())
+		{
+			if (field->Flags.contain(FieldFlags::Private))
+				out.WriteLine("{} {}{} {{}};", FormatTypeReference(db, field->FieldType), db.PrivateFieldPrefix, field->Name);
+		}
+
+		out.WriteLine("");
+		out.Unindent();
+		out.WriteLine("public:");
+		out.Indent();
+	}
+
+	out.WriteLine("friend struct reflection;");
+
 	AdditionalMembers(out, db, klass);
 	out.WriteEnd("}};");
 }
 
 void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* klass)
 {
+	/*
 	if (mWrittenTypes.contains(klass)) return;
 	if (klass->BaseType().Type)
 	{
 		WriteStruct(out, db, dynamic_cast<StructDefinition const*>(klass->BaseType().Type));
 		out.WriteLine("");
 	}
+	*/
 
 	if (klass->BaseType().Type)
 		out.WriteStart("struct {} : {} {{", klass->Name(), FormatTypeReference(db, klass->BaseType()));
@@ -204,6 +257,9 @@ void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db,
 	{
 		out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
 	}
+
+	out.WriteLine("friend struct reflection;");
+
 	AdditionalMembers(out, db, klass);
 	out.WriteEnd("}};");
 }
@@ -225,7 +281,7 @@ string CppDeclarationFormat::Export(Database const& db)
 	out.WriteLine("/// source_database: \"{}\"", string_ops::escaped(filesystem::absolute(db.Directory()).string(), "\"\\"));
 	out.WriteLine("/// generated_time: \"{}\"", chrono::zoned_time{chrono::current_zone(), chrono::system_clock::now()});
 
-	out.WriteLine("#include \"db_config.h\"");
+	//out.WriteLine("#include \"db_config.h\"");
 
 	if (!db.Namespace.empty())
 		out.WriteStart("namespace {} {{", db.Namespace);
@@ -236,15 +292,45 @@ string CppDeclarationFormat::Export(Database const& db)
 		{
 		case DefinitionType::Class: out.WriteLine("class {};", def->Name()); break;
 		case DefinitionType::BuiltIn: continue;
-		case DefinitionType::Enum: out.WriteLine("enum {};", def->Name()); break;
+		case DefinitionType::Enum: out.WriteLine("enum class {};", def->Name()); break;
 		case DefinitionType::Struct: out.WriteLine("struct {};", def->Name()); break;
 		}
 	}
 
 	out.WriteLine("");
 
-	mWrittenTypes.clear();
+	out.WriteStart("enum mirror_tags {{");
 	for (auto def : db.Definitions())
+	{
+		if (!def->IsBuiltIn())
+			out.WriteLine("{}_Mirror_Tag,", def->Name());
+	}
+	out.WriteEnd("}};");
+
+	set<TypeDefinition const*> closed_types;
+	vector<TypeDefinition const*> ordered_types;
+
+	auto calc_deps = [&](this auto& self, TypeDefinition const* def) {
+		if (closed_types.contains(def))
+			return;
+
+		set<TypeDefinition const*> dependencies;
+		def->CalculateDependencies(dependencies);
+
+		for (auto dep : dependencies)
+			self(dep);
+
+		closed_types.insert(def);
+		ordered_types.push_back(def);
+	};
+
+	for (auto def : db.Definitions())
+	{
+		calc_deps(def);
+	}
+
+	//mWrittenTypes.clear();
+	for (auto def : ordered_types)
 	{
 		switch (def->Type())
 		{
@@ -252,6 +338,152 @@ string CppDeclarationFormat::Export(Database const& db)
 		case DefinitionType::Enum: WriteEnum(out, db, dynamic_cast<EnumDefinition const*>(def)); break;
 		case DefinitionType::Struct: WriteStruct(out, db, dynamic_cast<StructDefinition const*>(def)); break;
 		}
+	}
+
+	out.WriteLine("");
+
+	out.WriteStart("struct Database {{");
+	out.WriteEnd("}};");
+
+	out.WriteLine("");
+
+	out.WriteStart("struct reflection {{");
+
+	out.WriteLine("template <typename TYPE, typename VISITOR>");
+	out.WriteStart("static void PreDeserialize(VISITOR& visitor, TYPE& record) {{");
+	out.WriteLine("if constexpr (::DataModel::HasPreDeserialize<Buff, VISITOR>) record.PreDeserialize(visitor);");
+	out.WriteEnd("}}");
+
+	out.WriteLine("template <typename TYPE, typename VISITOR>");
+	out.WriteStart("static void PostDeserialize(VISITOR& visitor, TYPE& record) {{");
+	out.WriteLine("if constexpr (::DataModel::HasPostDeserialize<Buff, VISITOR>) record.PostDeserialize(visitor);");
+	out.WriteEnd("}}");
+
+	out.WriteLine("template <typename TYPE, typename VISITOR>");
+	out.WriteStart("static void PreSerialize(VISITOR& visitor, TYPE const& record) {{");
+	out.WriteLine("if constexpr (::DataModel::HasPreSerialize<Buff, VISITOR>) record.PreSerialize(visitor);");
+	out.WriteEnd("}}");
+
+	out.WriteLine("template <typename TYPE, typename VISITOR>");
+	out.WriteStart("static void PostSerialize(VISITOR& visitor, TYPE const& record) {{");
+	out.WriteLine("if constexpr (::DataModel::HasPostSerialize<Buff, VISITOR>) record.PostSerialize(visitor);");
+	out.WriteEnd("}}");
+
+	for (auto def : db.Definitions())
+	{
+		if (def->IsBuiltIn()) continue;
+
+		out.WriteLine("");
+		out.WriteLine("/// {}", def->Name());
+		size_t i = 0;
+		switch (def->Type())
+		{
+		case DefinitionType::Class: 
+		case DefinitionType::Struct:
+
+			out.WriteLine("template <typename VISITOR>");
+			out.WriteStart("constexpr static void Deserialize(VISITOR& visitor, {}& record) {{", def->Name());
+			out.WriteLine("PreDeserialize(visitor, record);", def->Name());
+			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
+			{
+				if (!fld->Flags.contain(FieldFlags::Transient))
+					out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+			}
+			out.WriteLine("PostDeserialize(visitor, record);", def->Name());
+			out.WriteEnd("}}");
+
+			out.WriteLine("template <typename VISITOR>");
+			out.WriteStart("constexpr static void Serialize(VISITOR& visitor, {} const& record) {{", def->Name());
+			out.WriteLine("PreSerialize(visitor, record);", def->Name());
+			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
+			{
+				if (!fld->Flags.contain(FieldFlags::Transient))
+					out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+			}
+			out.WriteLine("PostSerialize(visitor, record);", def->Name());
+			out.WriteEnd("}}");
+
+			out.WriteLine("template <typename VISITOR>");
+			out.WriteStart("constexpr static void VisitFields(VISITOR& visitor, ::DataModel::RefAnyConst<{}> auto record) {{", def->Name());
+			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
+				out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+			out.WriteEnd("}}");
+			break;
+
+		case DefinitionType::Enum:
+			out.WriteLine("consteval static ::std::string_view EnumTypeName(::std::type_identity<{0}>) {{ return \"{0}\"; }}", def->Name());
+			out.WriteLine("consteval static ::std::size_t EnumCount(::std::type_identity<{0}>) {{ return {1}; }}", def->Name(), def->AsEnum()->EnumeratorCount());
+			out.WriteStart("consteval static ::std::array<::DataModel::EnumeratorProperties<{0}>, {1}> EnumEntries(::std::type_identity<{0}> ti) {{", def->Name(), def->AsEnum()->EnumeratorCount());
+			out.WriteStart("return {{");
+			for (auto e : def->AsEnum()->Enumerators())
+			{
+				out.WriteLine("::DataModel::EnumeratorProperties<{0}>{{ ({0}){1}, \"{2}\", \"{3}\" }},", def->Name(), e->ActualValue(), e->Name, e->DescriptiveName);
+			}
+			out.WriteEnd("}};");
+			out.WriteEnd("}}");
+			out.WriteLine("constexpr static {0} EnumValue(::std::type_identity<{0}> ti, ::std::size_t i) {{ return EnumEntries(ti)[i].Value; }}", def->Name());
+			out.WriteLine("template <::std::size_t I>");
+			out.WriteLine("requires (I < {})", def->AsEnum()->EnumeratorCount());
+			out.WriteLine("consteval static {0} EnumValue(::std::type_identity<{0}> ti) {{ return EnumEntries(ti)[I].Value; }}", def->Name());
+			out.WriteLine("constexpr static ::std::string_view EnumName(::std::type_identity<{0}> ti, ::std::size_t i) {{ return EnumEntries(ti)[i].Name; }}", def->Name());
+			out.WriteLine("template <::std::size_t I>");
+			out.WriteLine("requires (I < {})", def->AsEnum()->EnumeratorCount());
+			out.WriteLine("consteval static {0} EnumName(::std::type_identity<{0}> ti) {{ return EnumEntries(ti)[I].Name; }}", def->Name());
+
+			out.WriteStart("constexpr static bool EnumValid(::std::type_identity<{0}> ti, {0} val) {{ ", def->Name());
+			out.WriteStart("switch (val) {{");
+			i = 0;
+			for (auto e : def->AsEnum()->Enumerators())
+			{
+				out.WriteLine("case {}::{}: return true;", def->Name(), e->Name, i);
+				++i;
+			}
+			out.WriteEnd("}}");
+			out.WriteLine("return false;");
+			out.WriteEnd("}}");
+
+			out.WriteStart("constexpr static ::std::optional<::std::size_t> EnumIndex(::std::type_identity<{0}> ti, {0} val) {{ ", def->Name());
+			out.WriteStart("switch (val) {{");
+			i = 0;
+			for (auto e : def->AsEnum()->Enumerators())
+			{
+				out.WriteLine("case {}::{}: return {};", def->Name(), e->Name, i);
+				++i;
+			}
+			out.WriteEnd("}}");
+			out.WriteLine("return ::std::nullopt;");
+			out.WriteEnd("}}");
+
+			out.WriteStart("constexpr static ::std::optional<{0}> EnumCast(::std::type_identity<{0}> ti, ::std::string_view val) {{ ", def->Name());
+			out.WriteStart("for (auto&& [value, name, desc] : EnumEntries(ti)) {{");
+			out.WriteLine("if (val == name) return value;");
+			out.WriteEnd("}}");
+			out.WriteLine("return ::std::nullopt;");
+			out.WriteEnd("}}");
+
+			/// TODO: This
+			/*
+			out.WriteStart("constexpr static ::DataModel::Flags<{0}> EnumCastFlags(::std::type_identity<{0}> ti, ::std::string_view val) {{ ", def->Name());
+			out.WriteEnd("}}");
+			*/
+
+			out.WriteLine("template <{} V>", def->Name());
+			out.WriteStart("consteval static ::std::size_t EnumIndex() {{ ", def->Name());
+			out.WriteLine("return EnumIndex(::std::type_identity<{}>{{}}, V);", def->Name());
+			out.WriteEnd("}}");
+
+			out.WriteLine("template <typename VISITOR>");
+			out.WriteStart("constexpr static void VisitEnumerators(VISITOR& visitor, ::std::type_identity<{}>) {{", def->Name());
+			out.WriteEnd("}}");
+			break;
+		}
+	}
+	out.WriteEnd("}};");
+
+	for (auto def : db.Definitions())
+	{
+		if (!def->IsBuiltIn())
+			out.WriteLine("::std::type_identity<reflection> ReflectionTypeFor(::std::type_identity<{}>) {{ return {{}}; }}", def->Name());
 	}
 
 	if (!db.Namespace.empty())

@@ -68,6 +68,7 @@ struct Database
 	result<void, string> SetRecordBaseType(Rec def, TypeReference const& type);
 	result<void, string> SetFieldName(Fld def, string const& new_name);
 	result<void, string> SetFieldType(Fld def, TypeReference const& type);
+	result<void, string> SetFieldFlags(Fld def, enum_flags<FieldFlags> flags);
 
 	result<void, string> SwapFields(Rec def, size_t field_index_a, size_t field_index_b);
 	result<void, string> RotateFields(Rec def, size_t field_index, size_t new_position);
@@ -108,6 +109,7 @@ struct Database
 	auto VoidType() const noexcept { return mSchema.VoidType(); }
 
 	string Namespace;
+	string PrivateFieldPrefix = "m";
 
 	set<string, less<>> FoldedTypes;
 

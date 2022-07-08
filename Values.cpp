@@ -1,14 +1,11 @@
 #include "pch.h"
 
+#include "UICommon.h"
+
 #include "Database.h"
 #include "Values.h"
 
-#include "imgui.h"
-#include "imgui_stdlib.h"
-
 #include "codicons_font.h"
-
-void Label(string_view s);
 
 template <typename ... T> struct concat;
 template <typename ... Ts, typename ... Us>
@@ -475,7 +472,7 @@ bool VoidHandler::Edit(ValueDescriptor const& descriptor) const
 		}
 		return false;
 	}
-	Label("void");
+	TextU("void");
 	return false;
 }
 
@@ -613,35 +610,36 @@ result<void, string> VariantHandler::Initialize(TypeReference const& type, json&
 }
 result<void, string> JSONHandler::Initialize(TypeReference const& type, json& value) const { value = json{}; return success(); }
 
+/*
 template <typename... ARGS>
 void Text(string_view str, ARGS&&... args)
 {
-	auto f = vformat(str, make_format_args(forward<ARGS>(args)...));
-	Label(f);
+	TextU(vformat(str, make_format_args(forward<ARGS>(args)...)));
 }
+*/
 
-void VoidHandler::View(ConstValueDescriptor const& descriptor) const { Label("void"); }
-void F32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (float)descriptor.Value); }
-void F64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (double)descriptor.Value); }
-void I8Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int8_t)descriptor.Value); }
-void I16Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int16_t)descriptor.Value); }
-void I32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int32_t)descriptor.Value); }
-void I64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (int64_t)descriptor.Value); }
-void U8Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint8_t)descriptor.Value); }
-void U16Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint16_t)descriptor.Value); }
-void U32Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint32_t)descriptor.Value); }
-void U64Handler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (uint64_t)descriptor.Value); }
-void BoolHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (bool)descriptor.Value); }
-void StringHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", (string_view)descriptor.Value); }
-void BytesHandler::View(ConstValueDescriptor const& descriptor) const { Text("<bytes>"); }
-void FlagsHandler::View(ConstValueDescriptor const& descriptor) const { Text("<flags>"); }
-void ListHandler::View(ConstValueDescriptor const& descriptor) const { Text("<list>"); }
-void MapHandler::View(ConstValueDescriptor const& descriptor) const { Text("<map>"); }
-void ArrayHandler::View(ConstValueDescriptor const& descriptor) const { Text("<array>"); }
-void RefHandler::View(ConstValueDescriptor const& descriptor) const { Text("<ref>"); }
-void OwnHandler::View(ConstValueDescriptor const& descriptor) const { Text("<own>"); }
-void VariantHandler::View(ConstValueDescriptor const& descriptor) const { Text("<variant>"); }
-void JSONHandler::View(ConstValueDescriptor const& descriptor) const { Text("{}", descriptor.Value.dump()); }
+void VoidHandler::View(ConstValueDescriptor const& descriptor) const { TextF("void"); }
+void F32Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (float)descriptor.Value); }
+void F64Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (double)descriptor.Value); }
+void I8Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (int8_t)descriptor.Value); }
+void I16Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (int16_t)descriptor.Value); }
+void I32Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (int32_t)descriptor.Value); }
+void I64Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (int64_t)descriptor.Value); }
+void U8Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (uint8_t)descriptor.Value); }
+void U16Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (uint16_t)descriptor.Value); }
+void U32Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (uint32_t)descriptor.Value); }
+void U64Handler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (uint64_t)descriptor.Value); }
+void BoolHandler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (bool)descriptor.Value); }
+void StringHandler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", (string_view)descriptor.Value); }
+void BytesHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<bytes>"); }
+void FlagsHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<flags>"); }
+void ListHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<list>"); }
+void MapHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<map>"); }
+void ArrayHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<array>"); }
+void RefHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<ref>"); }
+void OwnHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<own>"); }
+void VariantHandler::View(ConstValueDescriptor const& descriptor) const { TextF("<variant>"); }
+void JSONHandler::View(ConstValueDescriptor const& descriptor) const { TextF("{}", descriptor.Value.dump()); }
 
 map<string, IBuiltInHandler const*, less<>> const mBuiltIns = {
 	{"void", &mVoidHandler},
