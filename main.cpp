@@ -595,11 +595,35 @@ bool FieldFlagsEditor(Database& db, FieldDefinition const* field)
 	);
 }
 
+bool ClassFlagsEditor(Database& db, ClassDefinition const* klass)
+{
+	return GenericEditor<ClassDefinition const*, enum_flags<ClassFlags>>("Class Flags", klass,
+		bind_front(&Database::ValidateClassFlags, &db),
+		[](ClassDefinition const*, enum_flags<ClassFlags>& flags) {
+			for (auto& flag : magic_enum::enum_entries<ClassFlags>())
+			{
+				string fuck = string{ flag.second };
+				bool val = flags.is_set(flag.first);
+				if (ImGui::Checkbox(fuck.c_str(), &val))
+					flags.set_to(val, flag.first);
+			}
+		},
+		bind_front(&Database::SetClassFlags, &db),
+		[](ClassDefinition const* def) -> auto const& { return def->Flags; }
+	);
+}
+
 void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 {
 	using namespace ImGui;
 	TextU("Name: "); SameLine(); TypeNameEditor(db, def);
 	TextU("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
+	if (def->IsClass())
+	{
+		TextU("Flags: ");
+		SameLine();
+		ClassFlagsEditor(db, (ClassDefinition const*)def);
+	}
 
 	if (Button(ICON_VS_SYMBOL_FIELD "Add Field"))
 	{

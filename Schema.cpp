@@ -406,3 +406,16 @@ void TypeReference::CalculateDependencies(set<TypeDefinition const*>& dependenci
 		}
 	}
 }
+
+json ClassDefinition::ToJSON() const
+{
+	auto result = RecordDefinition::ToJSON();
+	result["flags"] = Flags;
+	return result;
+}
+
+void ClassDefinition::FromJSON(json const& value)
+{
+	RecordDefinition::FromJSON(value);
+	Flags = get_array(value, "flags");
+}

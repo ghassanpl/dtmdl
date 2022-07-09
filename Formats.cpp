@@ -64,15 +64,15 @@ struct SimpleOutputter
 
 string CppDeclarationFormat::FormatName()
 {
-	return "C++ Headers";
+	return "C++ Type Header";
 }
 
 string CppDeclarationFormat::ExportFileName()
 {
-	return "header.hpp";
+	return "types.hpp";
 }
 
-string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition const* type)
+string CppFormatPlugin::FormatTypeName(Database const& db, TypeDefinition const* type)
 {
 	if (!type)
 		return {};
@@ -132,32 +132,60 @@ string CppDeclarationFormat::FormatTypeName(Database const& db, TypeDefinition c
 	return it->second;
 }
 
-string CppDeclarationFormat::FormatTypeReference(Database const& db, TypeReference const& ref)
+string CppFormatPlugin::FormatTypeReference(Database const& db, TypeReference const& ref)
 {
 	if (ref.TemplateArguments.size())
 		return format("{}<{}>", FormatTypeName(db, ref.Type), string_ops::join(ref.TemplateArguments, ", ", bind_front(&CppDeclarationFormat::FormatTemplateArgument, std::ref(db))));
 	return FormatTypeName(db, ref.Type);
 }
 
-string CppDeclarationFormat::FormatTemplateArgument(Database const& db, TemplateArgument const& arg)
+string CppFormatPlugin::FormatTemplateArgument(Database const& db, TemplateArgument const& arg)
 {
 	if (auto it = get_if<uint64_t>(&arg))
 		return to_string(*it);
 	return FormatTypeReference(db, get<TypeReference>(arg));
 }
 
-string CppDeclarationFormat::FormatNamespace(Database const& db)
+string CppFormatPlugin::FormatNamespace(Database const& db)
 {
 	return db.Namespace; /// TODO: This
+}
+
+SimpleOutputter CppFormatPlugin::StartOutput(Database const& db, vector<string_view> includes)
+{
+	mOutString.clear();
+	SimpleOutputter out{ mOutString };
+	out.WriteLine("/// source_database: \"{}\"", string_ops::escaped(filesystem::absolute(db.Directory()).string(), "\"\\"));
+	out.WriteLine("/// generated_time: \"{}\"", chrono::zoned_time{ chrono::current_zone(), chrono::system_clock::now() });
+
+	out.WriteLine("#pragma once");
+
+	for (auto include : includes)
+		out.WriteLine("#include \"{}\"", include);
+
+	if (!db.Namespace.empty())
+		out.WriteStart("namespace {} {{", db.Namespace);
+
+	return out;
+}
+
+string CppFormatPlugin::FinishOutput(Database const& db)
+{
+	SimpleOutputter out{ mOutString };
+
+	if (!db.Namespace.empty())
+		out.WriteLine("}}");
+
+	return move(mOutString).str();
 }
 
 void CppDeclarationFormat::AdditionalMembers(SimpleOutputter& out, Database const& db, TypeDefinition const* type)
 {
 	string additionals_name;
 	if (db.Namespace.empty())
-		additionals_name = format("DB_ADDITIONAL_FIELDS_FOR_{}", type->Name());
+		additionals_name = format("dtmdl_additional_fields_for_{}", type->Name());
 	else
-		additionals_name = format("DB_ADDITIONAL_FIELDS_FOR_{}_{}", db.Namespace, type->Name());
+		additionals_name = format("dtmdl_additional_fields_for_{}_{}", db.Namespace, type->Name());
 	out.WriteLine("#ifdef {}", additionals_name);
 	out.WriteLine("{}", additionals_name);
 	out.WriteLine("#endif");
@@ -165,19 +193,10 @@ void CppDeclarationFormat::AdditionalMembers(SimpleOutputter& out, Database cons
 
 void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, ClassDefinition const* klass)
 {
-	/*
-	if (mWrittenTypes.contains(klass)) return;
 	if (klass->BaseType().Type)
-	{
-		WriteClass(out, db, dynamic_cast<ClassDefinition const*>(klass->BaseType().Type));
-		out.WriteLine("");
-	}
-	*/
-
-	if (klass->BaseType().Type)
-		out.WriteStart("class {} : {} {{", klass->Name(), FormatTypeReference(db, klass->BaseType()));
+		out.WriteStart("class {}{} : public {} {{", klass->Name(), (klass->Flags.contain(ClassFlags::Final) ? " final" : ""), FormatTypeReference(db, klass->BaseType()));
 	else
-		out.WriteStart("class {} {{", klass->Name());
+		out.WriteStart("class {}{} : public ::DataModel::BaseClass {{", klass->Name(), (klass->Flags.contain(ClassFlags::Final) ? " final" : ""));
 
 	out.Unindent();
 	out.WriteLine("public:");
@@ -199,7 +218,6 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 
 	if (any_accessors)
 	{
-
 		for (auto& field : klass->Fields())
 		{
 			if (field->Flags.contain(FieldFlags::Getter))
@@ -232,6 +250,27 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 		out.Indent();
 	}
 
+	if (klass->Flags.contain(ClassFlags::CreateIsAs))
+	{
+		for (auto derived_class : db.Classes() | views::filter([klass](auto potential_child) { return potential_child->IsChildOf(klass); }))
+		{
+			out.WriteLine("bool Is{0}() const noexcept {{ return this->dtmdl_Type() == dtmdl_{0}_Mirror_Tag; }}", derived_class->Name());
+			out.WriteLine("auto As{0}() const noexcept -> {0} const* {{ return Is{0}() ? reinterpret_cast<{0} const*>(this) : nullptr; }}", derived_class->Name());
+			out.WriteLine("auto As{0}() noexcept -> {0}* {{ return Is{0}() ? reinterpret_cast<{0}*>(this) : nullptr; }}", derived_class->Name());
+		}
+		out.WriteLine("");
+	}
+
+	out.Unindent();
+	out.WriteLine("private:");
+	out.Indent();
+
+	out.WriteLine("{}() noexcept = default;", klass->Name());
+	out.WriteLine("{0}({0}&&) noexcept = delete;", klass->Name());
+	out.WriteLine("{0}({0} const&) noexcept = delete;", klass->Name());
+	out.WriteLine("{0} operator=({0}&&) noexcept = delete;", klass->Name());
+	out.WriteLine("{0} operator=({0} const&) noexcept = delete;", klass->Name());
+
 	out.WriteLine("friend struct reflection;");
 
 	AdditionalMembers(out, db, klass);
@@ -240,15 +279,6 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 
 void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* klass)
 {
-	/*
-	if (mWrittenTypes.contains(klass)) return;
-	if (klass->BaseType().Type)
-	{
-		WriteStruct(out, db, dynamic_cast<StructDefinition const*>(klass->BaseType().Type));
-		out.WriteLine("");
-	}
-	*/
-
 	if (klass->BaseType().Type)
 		out.WriteStart("struct {} : {} {{", klass->Name(), FormatTypeReference(db, klass->BaseType()));
 	else
@@ -276,15 +306,7 @@ void CppDeclarationFormat::WriteEnum(SimpleOutputter& out, Database const& db, E
 
 string CppDeclarationFormat::Export(Database const& db)
 {
-	stringstream outstr;
-	SimpleOutputter out{ outstr };
-	out.WriteLine("/// source_database: \"{}\"", string_ops::escaped(filesystem::absolute(db.Directory()).string(), "\"\\"));
-	out.WriteLine("/// generated_time: \"{}\"", chrono::zoned_time{chrono::current_zone(), chrono::system_clock::now()});
-
-	//out.WriteLine("#include \"db_config.h\"");
-
-	if (!db.Namespace.empty())
-		out.WriteStart("namespace {} {{", db.Namespace);
+	auto out = StartOutput(db);
 
 	for (auto def : db.Definitions())
 	{
@@ -303,7 +325,7 @@ string CppDeclarationFormat::Export(Database const& db)
 	for (auto def : db.Definitions())
 	{
 		if (!def->IsBuiltIn())
-			out.WriteLine("{}_Mirror_Tag,", def->Name());
+			out.WriteLine("dtmdl_{}_Mirror_Tag,", def->Name());
 	}
 	out.WriteEnd("}};");
 
@@ -342,10 +364,12 @@ string CppDeclarationFormat::Export(Database const& db)
 
 	out.WriteLine("");
 
-	out.WriteStart("struct Database {{");
-	out.WriteEnd("}};");
+	return FinishOutput(db);
+}
 
-	out.WriteLine("");
+string CppReflectionFormat::Export(Database const& db)
+{
+	auto out = StartOutput(db, { "types.hpp" });
 
 	out.WriteStart("struct reflection {{");
 
@@ -378,7 +402,7 @@ string CppDeclarationFormat::Export(Database const& db)
 		size_t i = 0;
 		switch (def->Type())
 		{
-		case DefinitionType::Class: 
+		case DefinitionType::Class:
 		case DefinitionType::Struct:
 
 			out.WriteLine("template <typename VISITOR>");
@@ -486,8 +510,21 @@ string CppDeclarationFormat::Export(Database const& db)
 			out.WriteLine("::std::type_identity<reflection> ReflectionTypeFor(::std::type_identity<{}>) {{ return {{}}; }}", def->Name());
 	}
 
-	if (!db.Namespace.empty())
-		out.WriteEnd("}}");
+	return FinishOutput(db);
+}
 
-	return move(outstr).str();
+string CppTablesFormat::Export(Database const& db)
+{
+	auto out = StartOutput(db, { "types.hpp" });
+	return FinishOutput(db);
+}
+
+string CppDatabaseFormat::Export(Database const& db)
+{
+	auto out = StartOutput(db, { "types.hpp" });
+
+	out.WriteStart("struct Database {{");
+	out.WriteEnd("}};");
+
+	return FinishOutput(db);
 }

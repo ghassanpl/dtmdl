@@ -117,6 +117,15 @@ struct TypeDefinition
 	auto const& TemplateParameters() const noexcept { return mTemplateParameters; }
 	auto const& Attributes() const noexcept { return mAttributes; }
 
+	bool IsChildOf(TypeDefinition const* other) const
+	{
+		if (mBaseType.Type == other)
+			return true;
+		if (mBaseType.Type)
+			return mBaseType.Type->IsChildOf(other);
+		return false;
+	}
+
 	virtual json ToJSON() const;
 	virtual void FromJSON(json const& value);
 
@@ -239,11 +248,23 @@ protected:
 	using RecordDefinition::RecordDefinition;
 };
 
+enum class ClassFlags
+{
+	Abstract,
+	Final,
+	CreateIsAs,
+};
+
 struct ClassDefinition : RecordDefinition
 {
+	enum_flags<ClassFlags> Flags;
+
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Class; }
 
 	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_CLASS; };
+
+	virtual json ToJSON() const override;
+	virtual void FromJSON(json const& value) override;
 
 protected:
 

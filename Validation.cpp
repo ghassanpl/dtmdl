@@ -157,6 +157,18 @@ result<void, string> Database::ValidateEnumeratorName(Enumerator def, string con
 	return success();
 }
 
+result<void, string> Database::ValidateClassFlags(Cls def, enum_flags<ClassFlags> flags)
+{
+	if (flags.are_all_set(ClassFlags::Abstract, ClassFlags::Final))
+		return failure("a class cannot be both abstract and final");
+	if (flags.is_set(ClassFlags::Final))
+	{
+		return failure(format("cannot set final as the following classes derive from it: {}", 
+			string_ops::join_and(Classes() | views::transform([](auto klass) { return klass->Name(); }), ", ", ", and ")));
+	}
+	return success();
+}
+
 result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference const& type)
 {
 	if (Schema().IsParent(def, type.Type))

@@ -314,6 +314,28 @@ result<void, string> Database::SetFieldFlags(Fld def, enum_flags<FieldFlags> fla
 	return success();
 }
 
+result<void, string> Database::SetClassFlags(Cls def, enum_flags<ClassFlags> flags)
+{
+	/// Validation
+	auto result = ValidateClassFlags(def, flags);
+	if (result.has_error())
+		return result;
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetClassFlags"}, {"class", def->Name()}, {"flags", flags}, {"previous", def->Flags}});
+
+	/// Schema Change
+	mut(def)->Flags = flags;
+
+	/// DataStore update
+	/// No need
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
 result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t field_index_b)
 {
 	/// Validation
@@ -588,6 +610,9 @@ Database::Database(filesystem::path dir)
 
 	AddFormatPlugin(make_unique<JSONSchemaFormat>());
 	AddFormatPlugin(make_unique<CppDeclarationFormat>());
+	AddFormatPlugin(make_unique<CppDatabaseFormat>());
+	AddFormatPlugin(make_unique<CppReflectionFormat>());
+	AddFormatPlugin(make_unique<CppTablesFormat>());
 
 	mDataStores.emplace("main", DataStore(mSchema));
 	

@@ -27,7 +27,21 @@ struct JSONSchemaFormat : FormatPlugin
 	virtual string Export(Database const&) override;
 };
 
-struct CppDeclarationFormat : FormatPlugin
+struct CppFormatPlugin : FormatPlugin
+{
+protected:
+
+	static string FormatTypeName(Database const& db, TypeDefinition const* type);
+	static string FormatTypeReference(Database const& db, TypeReference const& ref);
+	static string FormatTemplateArgument(Database const& db, TemplateArgument const& arg);
+	static string FormatNamespace(Database const& db);
+
+	stringstream mOutString;
+	SimpleOutputter StartOutput(Database const& db, vector<string_view> includes = {});
+	string FinishOutput(Database const& db);
+};
+
+struct CppDeclarationFormat : CppFormatPlugin
 {
 	// Inherited via FormatPlugin
 	virtual string FormatName() override;
@@ -42,10 +56,26 @@ private:
 	void WriteEnum(SimpleOutputter& out, Database const& db, EnumDefinition const* enoom);
 	void WriteStruct(SimpleOutputter& out, Database const& db, StructDefinition const* strukt);
 
-	static string FormatTypeName(Database const& db, TypeDefinition const* type);
-	static string FormatTypeReference(Database const& db, TypeReference const& ref);
-	static string FormatTemplateArgument(Database const& db, TemplateArgument const& arg);
-	static string FormatNamespace(Database const& db);
-
 	void AdditionalMembers(SimpleOutputter& out, Database const& db, TypeDefinition const* type);
+};
+
+struct CppReflectionFormat : CppFormatPlugin
+{
+	virtual string FormatName() override { return "C++ Reflection Header"; }
+	virtual string ExportFileName() override { return "reflection.hpp"; }
+	virtual string Export(Database const&) override;
+};
+
+struct CppTablesFormat : CppFormatPlugin
+{
+	virtual string FormatName() override { return "C++ Tables Header"; }
+	virtual string ExportFileName() override { return "tables.hpp"; }
+	virtual string Export(Database const&) override;
+};
+
+struct CppDatabaseFormat : CppFormatPlugin
+{
+	virtual string FormatName() override { return "C++ Database Header"; }
+	virtual string ExportFileName() override { return "database.hpp"; }
+	virtual string Export(Database const&) override;
 };
