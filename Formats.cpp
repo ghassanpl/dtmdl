@@ -21,19 +21,17 @@ string JSONSchemaFormat::Export(Database const& db)
 	result["version"] = 1;
 	{
 		auto& types = result["types"] = json::object();
-		for (auto type : db.Definitions())
+		for (auto type : db.UserDefinitions())
 		{
-			if (!type->IsBuiltIn())
-				types[type->Name()] = magic_enum::enum_name(type->Type());
+			types[type->Name()] = magic_enum::enum_name(type->Type());
 		}
 	}
 
 	{
 		auto& types = result["typedesc"] = json::object();
-		for (auto type : db.Definitions())
+		for (auto type : db.UserDefinitions())
 		{
-			if (!type->IsBuiltIn())
-				types[type->Name()] = type->ToJSON();
+			types[type->Name()] = type->ToJSON();
 		}
 	}
 
@@ -202,6 +200,10 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	out.WriteLine("public:");
 	out.Indent();
 
+	out.WriteLine("virtual ::DataModel::dtmdl_TypeInfo const* dtmdl_Type() const noexcept override {{ return &dtmdl_{0}_type_info; }}", klass->Name());
+	out.WriteLine("virtual void dtmdl_Mark() noexcept override;");
+	out.WriteLine("");
+
 	bool any_accessors = false;
 	bool any_privates = false;
 
@@ -254,15 +256,17 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	{
 		for (auto derived_class : db.Classes() | views::filter([klass](auto potential_child) { return potential_child->IsChildOf(klass); }))
 		{
-			out.WriteLine("bool Is{0}() const noexcept {{ return this->dtmdl_Type() == dtmdl_{0}_Mirror_Tag; }}", derived_class->Name());
-			out.WriteLine("auto As{0}() const noexcept -> {0} const* {{ return Is{0}() ? reinterpret_cast<{0} const*>(this) : nullptr; }}", derived_class->Name());
-			out.WriteLine("auto As{0}() noexcept -> {0}* {{ return Is{0}() ? reinterpret_cast<{0}*>(this) : nullptr; }}", derived_class->Name());
+			out.WriteLine("bool Is{0}() const noexcept {{ return this->dtmdl_Type() == &dtmdl_{0}_type_info; }}", derived_class->Name());
+			out.WriteLine("auto As{0}() const noexcept -> ::DataModel::NativeTypes::Ref<{0} const> {{ return Is{0}() ? reinterpret_cast<{0} const*>(this) : nullptr; }}", derived_class->Name());
+			out.WriteLine("auto As{0}() noexcept -> ::DataModel::NativeTypes::Ref<{0}> {{ return Is{0}() ? reinterpret_cast<{0}*>(this) : nullptr; }}", derived_class->Name());
 		}
 		out.WriteLine("");
 	}
 
+	AdditionalMembers(out, db, klass);
+
 	out.Unindent();
-	out.WriteLine("private:");
+	out.WriteLine("protected:");
 	out.Indent();
 
 	out.WriteLine("{}() noexcept = default;", klass->Name());
@@ -271,9 +275,8 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	out.WriteLine("{0} operator=({0}&&) noexcept = delete;", klass->Name());
 	out.WriteLine("{0} operator=({0} const&) noexcept = delete;", klass->Name());
 
-	out.WriteLine("friend struct reflection;");
+	out.WriteLine("friend struct dtmdl_reflection;");
 
-	AdditionalMembers(out, db, klass);
 	out.WriteEnd("}};");
 }
 
@@ -288,7 +291,7 @@ void CppDeclarationFormat::WriteStruct(SimpleOutputter& out, Database const& db,
 		out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), field->Name);
 	}
 
-	out.WriteLine("friend struct reflection;");
+	out.WriteLine("friend struct dtmdl_reflection;");
 
 	AdditionalMembers(out, db, klass);
 	out.WriteEnd("}};");
@@ -308,12 +311,11 @@ string CppDeclarationFormat::Export(Database const& db)
 {
 	auto out = StartOutput(db);
 
-	for (auto def : db.Definitions())
+	for (auto def : db.UserDefinitions())
 	{
 		switch (def->Type())
 		{
 		case DefinitionType::Class: out.WriteLine("class {};", def->Name()); break;
-		case DefinitionType::BuiltIn: continue;
 		case DefinitionType::Enum: out.WriteLine("enum class {};", def->Name()); break;
 		case DefinitionType::Struct: out.WriteLine("struct {};", def->Name()); break;
 		}
@@ -322,12 +324,29 @@ string CppDeclarationFormat::Export(Database const& db)
 	out.WriteLine("");
 
 	out.WriteStart("enum mirror_tags {{");
-	for (auto def : db.Definitions())
+	for (auto def : db.UserDefinitions())
 	{
-		if (!def->IsBuiltIn())
-			out.WriteLine("dtmdl_{}_Mirror_Tag,", def->Name());
+		out.WriteLine("dtmdl_{}_Mirror_Tag,", def->Name());
 	}
 	out.WriteEnd("}};");
+
+	out.WriteLine("");
+
+	size_t count = 0;
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteLine("extern ::DataModel::dtmdl_TypeInfo const dtmdl_{}_type_info;", def->Name());
+		++count;
+	}
+
+	out.WriteStart("constexpr inline ::std::array<::DataModel::dtmdl_TypeInfo const*, {}> dtmdl_types {{", count);
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteLine("&dtmdl_{}_type_info,", def->Name());
+	}
+	out.WriteEnd("}};");
+
+	out.WriteLine("");
 
 	set<TypeDefinition const*> closed_types;
 	vector<TypeDefinition const*> ordered_types;
@@ -346,7 +365,7 @@ string CppDeclarationFormat::Export(Database const& db)
 		ordered_types.push_back(def);
 	};
 
-	for (auto def : db.Definitions())
+	for (auto def : db.UserDefinitions())
 	{
 		calc_deps(def);
 	}
@@ -371,7 +390,7 @@ string CppReflectionFormat::Export(Database const& db)
 {
 	auto out = StartOutput(db, { "types.hpp" });
 
-	out.WriteStart("struct reflection {{");
+	out.WriteStart("struct dtmdl_reflection {{");
 
 	out.WriteLine("template <typename TYPE, typename VISITOR>");
 	out.WriteStart("static void PreDeserialize(VISITOR& visitor, TYPE& record) {{");
@@ -393,10 +412,8 @@ string CppReflectionFormat::Export(Database const& db)
 	out.WriteLine("if constexpr (::DataModel::HasPostSerialize<Buff, VISITOR>) record.PostSerialize(visitor);");
 	out.WriteEnd("}}");
 
-	for (auto def : db.Definitions())
+	for (auto def : db.UserDefinitions())
 	{
-		if (def->IsBuiltIn()) continue;
-
 		out.WriteLine("");
 		out.WriteLine("/// {}", def->Name());
 		size_t i = 0;
@@ -411,7 +428,7 @@ string CppReflectionFormat::Export(Database const& db)
 			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
 			{
 				if (!fld->Flags.contain(FieldFlags::Transient))
-					out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+					out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			}
 			out.WriteLine("PostDeserialize(visitor, record);", def->Name());
 			out.WriteEnd("}}");
@@ -422,7 +439,7 @@ string CppReflectionFormat::Export(Database const& db)
 			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
 			{
 				if (!fld->Flags.contain(FieldFlags::Transient))
-					out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+					out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			}
 			out.WriteLine("PostSerialize(visitor, record);", def->Name());
 			out.WriteEnd("}}");
@@ -430,7 +447,7 @@ string CppReflectionFormat::Export(Database const& db)
 			out.WriteLine("template <typename VISITOR>");
 			out.WriteStart("constexpr static void VisitFields(VISITOR& visitor, ::DataModel::RefAnyConst<{}> auto record) {{", def->Name());
 			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
-				out.WriteLine("visitor(record.{0}, \"{0}\", {1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
+				out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			out.WriteEnd("}}");
 			break;
 
@@ -504,10 +521,9 @@ string CppReflectionFormat::Export(Database const& db)
 	}
 	out.WriteEnd("}};");
 
-	for (auto def : db.Definitions())
+	for (auto def : db.UserDefinitions())
 	{
-		if (!def->IsBuiltIn())
-			out.WriteLine("::std::type_identity<reflection> ReflectionTypeFor(::std::type_identity<{}>) {{ return {{}}; }}", def->Name());
+		out.WriteLine("::std::type_identity<dtmdl_reflection> ReflectionTypeFor(::std::type_identity<{}>) {{ return {{}}; }}", def->Name());
 	}
 
 	return FinishOutput(db);
@@ -523,7 +539,7 @@ string CppDatabaseFormat::Export(Database const& db)
 {
 	auto out = StartOutput(db, { "types.hpp" });
 
-	out.WriteStart("struct Database {{");
+	out.WriteStart("struct dtmdl_database {{");
 	out.WriteEnd("}};");
 
 	return FinishOutput(db);

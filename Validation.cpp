@@ -24,6 +24,8 @@ result<void, string> ValidateIdentifierName(string_view new_name)
 		return failure("name must contain only letters, numbers, or underscores");
 	if (cpp_keywords.contains(new_name))
 		return failure("name cannot be a C++ keyword");
+	if (new_name.starts_with("dtmdl_"))
+		return failure("name cannot start with 'dtmdl_' (we use this for reflection functions/types/objects/macros)");
 	if (new_name.find("__") != string::npos)
 		return failure("name cannot contain two consecutive underscores (__)");
 	if (new_name.size() >= 2 && new_name[0] == '_' && string_ops::ascii::isupper(new_name[1]))
@@ -120,6 +122,9 @@ result<void, string> Database::ValidateTypeName(Def def, string const& new_name)
 
 result<void, string> Database::ValidateFieldName(Fld def, string const& new_name)
 {
+	AssumingNotNull(def);
+	AssumingNotNull(def->ParentRecord);
+
 	if (auto result = ValidateIdentifierName(new_name); result.has_error())
 		return result;
 
@@ -143,6 +148,9 @@ result<void, string> Database::ValidateFieldName(Fld def, string const& new_name
 
 result<void, string> Database::ValidateEnumeratorName(Enumerator def, string const& new_name)
 {
+	AssumingNotNull(def);
+	AssumingNotNull(def->ParentEnum);
+
 	if (auto result = ValidateIdentifierName(new_name); result.has_error())
 		return result;
 
@@ -159,18 +167,57 @@ result<void, string> Database::ValidateEnumeratorName(Enumerator def, string con
 
 result<void, string> Database::ValidateClassFlags(Cls def, enum_flags<ClassFlags> flags)
 {
+	AssumingNotNull(def);
+
 	if (flags.are_all_set(ClassFlags::Abstract, ClassFlags::Final))
 		return failure("a class cannot be both abstract and final");
-	if (flags.is_set(ClassFlags::Final))
+	if (flags.contain(ClassFlags::Final))
 	{
 		return failure(format("cannot set final as the following classes derive from it: {}", 
 			string_ops::join_and(Classes() | views::transform([](auto klass) { return klass->Name(); }), ", ", ", and ")));
+	}
+
+	if (flags.contain(ClassFlags::CreateIsAs))
+	{
+		ClassDefinition const* already = nullptr;
+		def->ForEachBase([&already](TypeReference const& base) {
+			if (auto klass = base->AsClass())
+			{
+				if (klass->Flags.contain(ClassFlags::CreateIsAs))
+				{
+					already = klass;
+					return false;
+				}
+			}
+			return true;
+		});
+
+		if (already && already != def)
+			return failure(format("base class {} already requests Is and As accessors", already->Name()));
+	}
+
+	return success();
+}
+
+result<void, string> Database::ValidateStructFlags(Str def, enum_flags<StructFlags> flags)
+{
+	AssumingNotNull(def);
+
+	if (def->Flags.contain(StructFlags::CreateTableType) && !flags.contain(StructFlags::CreateTableType))
+	{
+		string total = string_ops::join_and(def->Fields()
+			| views::filter([](auto& field) { return field->Flags.contain(FieldFlags::Unique); })
+			| views::transform([](auto& field) { return field->Name; }), ", ", ", and ");
+		if (total.size())
+			return failure(format("cannot unset {} because the following fields are set as Unique: {}", magic_enum::enum_name(StructFlags::CreateTableType), move(total)));
 	}
 	return success();
 }
 
 result<void, string> Database::ValidateRecordBaseType(Rec def, TypeReference const& type)
 {
+	AssumingNotNull(def);
+
 	if (Schema().IsParent(def, type.Type))
 		return failure("cycle in base types");
 
@@ -221,6 +268,9 @@ struct TypeValidator
 
 	result<void, string> ValidateType(TypeReference const& type, bool must_be_complete = false)
 	{
+		if (!type.Type)
+			return failure("type must not be empty");
+
 		if (must_be_complete)
 		{
 			if (auto incomplete = ValidateOpenness(type); incomplete.has_error())
@@ -286,6 +336,9 @@ result<void, string> ValidateFieldType(FieldDefinition const* def, TypeReference
 	if (!type.Type)
 		return failure("field type is invalid");
 
+	if (def->Flags.contain(FieldFlags::Unique) && !ValidateTypeDefinition(def->FieldType.Type, TemplateParameterQualifier::Scalar))
+		return failure("field is set as Unique so field type must be scalar");
+		
 	TypeValidator validator;
 	validator.OpenTypes.insert(def->ParentRecord);
 	return validator.ValidateType(type);

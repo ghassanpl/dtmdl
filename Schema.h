@@ -85,6 +85,8 @@ struct TemplateParameter
 };
 
 struct RecordDefinition;
+struct StructDefinition;
+struct ClassDefinition;
 struct EnumDefinition;
 struct Schema;
 
@@ -103,6 +105,8 @@ struct TypeDefinition
 	bool IsEnum() const noexcept { return Type() == DefinitionType::Enum; }
 
 	RecordDefinition const* AsRecord() const noexcept;
+	StructDefinition const* AsStruct() const noexcept;
+	ClassDefinition const* AsClass() const noexcept;
 	EnumDefinition const* AsEnum() const noexcept;
 
 	auto const& Schema() const noexcept { return mSchema; }
@@ -124,6 +128,18 @@ struct TypeDefinition
 		if (mBaseType.Type)
 			return mBaseType.Type->IsChildOf(other);
 		return false;
+	}
+
+	template <typename FUNC>
+	void ForEachBase(FUNC&& func) const
+	{
+		auto base = mBaseType;
+		while (base)
+		{
+			if (!func(base))
+				break;
+			base = base.Type->BaseType();
+		}
 	}
 
 	virtual json ToJSON() const;
@@ -165,7 +181,8 @@ enum class FieldFlags
 	Private,
 	Transient,
 	Getter,
-	Setter
+	Setter,
+	Unique,
 };
 
 struct FieldDefinition
@@ -179,7 +196,7 @@ struct FieldDefinition
 	FieldDefinition(RecordDefinition const* parent, string name, TypeReference ref) : ParentRecord(parent), Name(move(name)), FieldType(move(ref)) {}
 	FieldDefinition(RecordDefinition const* parent, json const& def) : ParentRecord(parent) { FromJSON(def); }
 	
-	json ToJSON() const { return json::object({ {"name", Name }, {"type", FieldType.ToJSON()}, {"attributes", Attributes}, {"flags", Flags} }); }
+	json ToJSON() const;
 	void FromJSON(json const& value);
 
 	string ToString() const { return format("var {} : {}; // {}", Name, FieldType.ToString(), Attributes.dump()); }
@@ -189,6 +206,8 @@ struct FieldDefinition
 		FieldType.CalculateDependencies(dependencies);
 	}
 };
+
+bool IsFlagAvailable(FieldDefinition const* fld, FieldFlags flag);
 
 struct RecordDefinition : TypeDefinition
 {
@@ -226,16 +245,28 @@ protected:
 	using TypeDefinition::TypeDefinition;
 };
 
+enum class StructFlags
+{
+	CreateTableType,
+};
+
 struct StructDefinition : RecordDefinition
 {
+	enum_flags<StructFlags> Flags;
+
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Struct; }
 
 	virtual string_view Icon() const noexcept { return ICON_VS_SYMBOL_STRUCTURE; };
+
+	virtual json ToJSON() const override;
+	virtual void FromJSON(json const& value) override;
 
 protected:
 
 	using RecordDefinition::RecordDefinition;
 };
+
+bool IsFlagAvailable(StructDefinition const* fld, StructFlags flag);
 
 struct AttributeDefinition : RecordDefinition
 {
@@ -271,6 +302,8 @@ protected:
 	using RecordDefinition::RecordDefinition;
 
 };
+
+bool IsFlagAvailable(ClassDefinition const* fld, ClassFlags flag);
 
 struct EnumDefinition;
 
@@ -371,6 +404,7 @@ struct Schema
 	Schema();
 
 	auto Definitions() const noexcept { return mDefinitions | views::transform([](unique_ptr<TypeDefinition> const& element) -> TypeDefinition const* const { return element.get(); }); }
+	auto UserDefinitions() const noexcept { return Definitions() | views::filter([](TypeDefinition const* def) { return !def->IsBuiltIn(); }); }
 
 	TypeDefinition const* ResolveType(string_view name) const;
 	template <typename T>

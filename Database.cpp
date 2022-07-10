@@ -336,6 +336,28 @@ result<void, string> Database::SetClassFlags(Cls def, enum_flags<ClassFlags> fla
 	return success();
 }
 
+result<void, string> Database::SetStructFlags(Str def, enum_flags<StructFlags> flags)
+{
+	/// Validation
+	auto result = ValidateStructFlags(def, flags);
+	if (result.has_error())
+		return result;
+
+	/// ChangeLog add
+	AddChangeLog(json{ {"action", "SetStructFlags"}, {"struct", def->Name()}, {"flags", flags}, {"previous", def->Flags} });
+
+	/// Schema Change
+	mut(def)->Flags = flags;
+
+	/// DataStore update
+	/// No need
+
+	/// Save
+	SaveAll();
+
+	return success();
+}
+
 result<void, string> Database::SwapFields(Rec def, size_t field_index_a, size_t field_index_b)
 {
 	/// Validation

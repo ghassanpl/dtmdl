@@ -24,6 +24,13 @@ struct IModal
 	bool Close = false;
 };
 
+namespace ghassanpl
+{
+	void ReportAssumptionFailure(std::string_view expectation, std::initializer_list<std::pair<std::string_view, std::string>> values, std::string data, std::source_location loc)
+	{
+		msg::assumption_failure(expectation, values, data, loc);
+	}
+}
 
 struct ErrorModal : IModal
 {
@@ -577,19 +584,26 @@ void DoDeleteTypeUI(Database& db, TypeDefinition const* def)
 	);
 }
 
+template <typename T, typename E>
+void FlagEditor(T const* val, enum_flags<E>& flags)
+{
+	for (auto& [value, name] : magic_enum::enum_entries<E>())
+	{
+		if (!IsFlagAvailable(val, value))
+			continue;
+
+		string fuck = string{ name };
+		bool val = flags.is_set(value);
+		if (ImGui::Checkbox(fuck.c_str(), &val))
+			flags.set_to(val, value);
+	}
+}
+
 bool FieldFlagsEditor(Database& db, FieldDefinition const* field)
 {
 	return GenericEditor<FieldDefinition const*, enum_flags<FieldFlags>>("Field Flags", field,
-		[](FieldDefinition const* def, enum_flags<FieldFlags> const& value) -> result<void, string> { return success(); },
-		[](FieldDefinition const*, enum_flags<FieldFlags>& flags) {
-			for (auto& flag : magic_enum::enum_entries<FieldFlags>())
-			{
-				string fuck = string{ flag.second };
-				bool val = flags.is_set(flag.first);
-				if (ImGui::Checkbox(fuck.c_str(), &val))
-					flags.set_to(val, flag.first);
-			}
-		},
+		bind_front(&Database::ValidateFieldFlags, &db),
+		[](FieldDefinition const* val, enum_flags<FieldFlags>& flags) { FlagEditor(val, flags); },
 		bind_front(&Database::SetFieldFlags, &db),
 		[](FieldDefinition const* def) -> auto const& { return def->Flags; }
 	);
@@ -599,17 +613,19 @@ bool ClassFlagsEditor(Database& db, ClassDefinition const* klass)
 {
 	return GenericEditor<ClassDefinition const*, enum_flags<ClassFlags>>("Class Flags", klass,
 		bind_front(&Database::ValidateClassFlags, &db),
-		[](ClassDefinition const*, enum_flags<ClassFlags>& flags) {
-			for (auto& flag : magic_enum::enum_entries<ClassFlags>())
-			{
-				string fuck = string{ flag.second };
-				bool val = flags.is_set(flag.first);
-				if (ImGui::Checkbox(fuck.c_str(), &val))
-					flags.set_to(val, flag.first);
-			}
-		},
+		[](ClassDefinition const* val, enum_flags<ClassFlags>& flags) { FlagEditor(val, flags); },
 		bind_front(&Database::SetClassFlags, &db),
 		[](ClassDefinition const* def) -> auto const& { return def->Flags; }
+	);
+}
+
+bool StructFlagsEditor(Database& db, StructDefinition const* klass)
+{
+	return GenericEditor<StructDefinition const*, enum_flags<StructFlags>>("Struct Flags", klass,
+		bind_front(&Database::ValidateStructFlags, &db),
+		[](StructDefinition const* val, enum_flags<StructFlags>& flags) { FlagEditor(val, flags); },
+		bind_front(&Database::SetStructFlags, &db),
+		[](StructDefinition const* def) -> auto const& { return def->Flags; }
 	);
 }
 
@@ -618,12 +634,13 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 	using namespace ImGui;
 	TextU("Name: "); SameLine(); TypeNameEditor(db, def);
 	TextU("Base Type: "); SameLine(); RecordBaseTypeEditor(db, def);
+	
+	TextU("Flags: ");
+	SameLine();
 	if (def->IsClass())
-	{
-		TextU("Flags: ");
-		SameLine();
 		ClassFlagsEditor(db, (ClassDefinition const*)def);
-	}
+	else if (def->IsStruct())
+		StructFlagsEditor(db, (StructDefinition const*)def);
 
 	if (Button(ICON_VS_SYMBOL_FIELD "Add Field"))
 	{
@@ -669,8 +686,7 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				SetNextItemWidth(GetContentRegionAvail().x);
 				FieldTypeEditor(db, field);
 				TableNextColumn();
-				if (def->IsClass())
-					FieldFlagsEditor(db, field);
+				FieldFlagsEditor(db, field);
 				TableNextColumn();
 
 				BeginDisabled(index == 0);
@@ -887,10 +903,6 @@ void PropertiesTab()
 	LabelText("Directory", "%s", dir.c_str());
 
 	InputText("Namespace", &mCurrentDatabase->Namespace);
-
-	Separator();
-	if (Button(ICON_VS_FILE_ZIP "Create Backup"))
-		CheckError(mCurrentDatabase->CreateBackup(), "Backup successfully created");
 }
 
 int main(int argc, char** argv)
@@ -969,7 +981,7 @@ int main(int argc, char** argv)
 		ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
 		ImGui::Begin("Main Window", nullptr, ImGuiWindowFlags_NoDecoration);
 
-		if (ImGui::Button("Open Database"))
+		if (ImGui::Button(ICON_VS_FOLDER_OPENED "Open Database"))
 		{
 			try
 			{
@@ -986,17 +998,20 @@ int main(int argc, char** argv)
 		}
 		ImGui::SameLine();
 		ImGui::BeginDisabled(mCurrentDatabase == nullptr);
-		if (ImGui::Button("Close Database"))
+		if (ImGui::Button(ICON_VS_CLOSE_ALL "Close Database"))
 		{
 			mCurrentDatabase->SaveAll();
 			mCurrentDatabase = nullptr;
 		}
 		ImGui::EndDisabled();
 		ImGui::SameLine();
-		if (ImGui::Button("Save All"))
+		if (ImGui::Button(ICON_VS_SAVE_ALL "Save All"))
 		{
 			mCurrentDatabase->SaveAll();
 		}
+		ImGui::SameLine();
+		if (ImGui::Button(ICON_VS_FILE_ZIP "Create Backup"))
+			CheckError(mCurrentDatabase->CreateBackup(), "Backup successfully created");
 		ImGui::SameLine();
 
 		ImGui::NewLine();

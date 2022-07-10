@@ -34,10 +34,12 @@ struct Database
 	using Rec = RecordDefinition const*;
 	using Fld = FieldDefinition const*;
 	using Cls = ClassDefinition const*;
+	using Str = StructDefinition const*;
 	using Enum = EnumDefinition const*;
 	using Enumerator = EnumeratorDefinition const*;
 
 	auto Definitions() const noexcept { return mSchema.Definitions(); }
+	auto UserDefinitions() const noexcept { return mSchema.UserDefinitions(); }
 	auto Classes() const noexcept { return mSchema.Definitions() | views::filter([](auto def) { return def->IsClass(); }) | views::transform([](auto def) { return (ClassDefinition const*)def; }); }
 	auto Structs() const noexcept { return mSchema.Definitions() | views::filter([](auto def) { return def->IsStruct(); }) | views::transform([](auto def) { return (StructDefinition const*)def; }); }
 
@@ -55,6 +57,8 @@ struct Database
 	result<void, string> ValidateFieldName(Fld def, string const& new_name);
 	result<void, string> ValidateEnumeratorName(Enumerator def, string const& new_name);
 	result<void, string> ValidateClassFlags(Cls def, enum_flags<ClassFlags> flags);
+	result<void, string> ValidateFieldFlags(Fld def, enum_flags<FieldFlags> flags) { return success(); }
+	result<void, string> ValidateStructFlags(Str def, enum_flags<StructFlags> flags);
 
 	vector<TypeUsage> LocateTypeUsages(Def type) const;
 
@@ -74,6 +78,7 @@ struct Database
 	result<void, string> SetFieldType(Fld def, TypeReference const& type);
 	result<void, string> SetFieldFlags(Fld def, enum_flags<FieldFlags> flags);
 	result<void, string> SetClassFlags(Cls def, enum_flags<ClassFlags> flags);
+	result<void, string> SetStructFlags(Str def, enum_flags<StructFlags> flags);
 
 	result<void, string> SwapFields(Rec def, size_t field_index_a, size_t field_index_b);
 	result<void, string> RotateFields(Rec def, size_t field_index, size_t new_position);

@@ -1,8 +1,11 @@
 #include "pch.h"
 
 #include "Schema.h"
+#include "Validation.h"
 
 RecordDefinition const* TypeDefinition::AsRecord() const noexcept { return IsRecord() ? static_cast<RecordDefinition const*>(this) : nullptr; }
+StructDefinition const* TypeDefinition::AsStruct() const noexcept { return IsStruct() ? static_cast<StructDefinition const*>(this) : nullptr; }
+ClassDefinition const* TypeDefinition::AsClass() const noexcept { return IsClass() ? static_cast<ClassDefinition const*>(this) : nullptr; }
 EnumDefinition const* TypeDefinition::AsEnum() const noexcept { return IsEnum() ? static_cast<EnumDefinition const*>(this) : nullptr; }
 
 string to_string(TypeReference const& tr)
@@ -169,7 +172,6 @@ json RecordDefinition::ToJSON() const
 		fields.push_back(field->ToJSON());
 	return result;
 }
-
 void RecordDefinition::FromJSON(json const& value)
 {
 	TypeDefinition::FromJSON(value);
@@ -177,14 +179,6 @@ void RecordDefinition::FromJSON(json const& value)
 	auto& fields = value.at("fields").get_ref<json::array_t const&>();
 	for (auto& field : fields)
 		mFields.push_back(make_unique<FieldDefinition>(this, field));
-}
-
-void FieldDefinition::FromJSON(json const& value)
-{
-	Name = value.at("name").get_ref<json::string_t const&>();
-	FieldType.FromJSON(ParentRecord->Schema(), value.at("type"));
-	Attributes = get(value, "attributes");
-	Flags = get_array(value, "flags");
 }
 
 int64_t EnumeratorDefinition::ActualValue() const
@@ -366,7 +360,6 @@ void EnumDefinition::FromJSON(json const& value)
 		mEnumerators.push_back(make_unique<EnumeratorDefinition>(this, enumerator));
 }
 
-
 BuiltinDefinition const* Schema::AddNative(string name, string native_name, vector<TemplateParameter> params, bool markable, ghassanpl::enum_flags<TemplateParameterQualifier> applicable_qualifiers, string icon)
 {
 	return AddType<BuiltinDefinition>(move(name), move(native_name), move(params), markable, applicable_qualifiers, move(icon));
@@ -407,10 +400,31 @@ void TypeReference::CalculateDependencies(set<TypeDefinition const*>& dependenci
 	}
 }
 
+template <typename T, typename E>
+enum_flags<E> FilterBy(T const* self, enum_flags<E> value)
+{
+	enum_flags<E> result{};
+	value.for_each([self, &result](E v) {
+		if (IsFlagAvailable(self, v))
+			result.set(v);
+	});
+	return result;
+}
+
+json FieldDefinition::ToJSON() const { return json::object({ { "name", Name },{ "type", FieldType.ToJSON() },{ "attributes", Attributes },{ "flags", FilterBy(this, Flags) } }); }
+
+void FieldDefinition::FromJSON(json const& value)
+{
+	Name = value.at("name").get_ref<json::string_t const&>();
+	FieldType.FromJSON(ParentRecord->Schema(), value.at("type"));
+	Attributes = get(value, "attributes");
+	Flags = get_array(value, "flags");
+}
+
 json ClassDefinition::ToJSON() const
 {
 	auto result = RecordDefinition::ToJSON();
-	result["flags"] = Flags;
+	result["flags"] = FilterBy(this, Flags);
 	return result;
 }
 
@@ -418,4 +432,47 @@ void ClassDefinition::FromJSON(json const& value)
 {
 	RecordDefinition::FromJSON(value);
 	Flags = get_array(value, "flags");
+}
+
+json StructDefinition::ToJSON() const
+{
+	auto result = RecordDefinition::ToJSON();
+	result["flags"] = FilterBy(this, Flags);
+	return result;
+}
+
+void StructDefinition::FromJSON(json const& value)
+{
+	RecordDefinition::FromJSON(value);
+	Flags = get_array(value, "flags");
+}
+
+bool IsFlagAvailable(FieldDefinition const* fld, FieldFlags flag)
+{
+	switch (flag)
+	{
+	case FieldFlags::Private: return fld->ParentRecord->IsClass();
+	case FieldFlags::Transient: return fld->ParentRecord->IsClass();
+	case FieldFlags::Getter: return fld->ParentRecord->IsClass();
+	case FieldFlags::Setter: return fld->ParentRecord->IsClass();
+	case FieldFlags::Unique: return fld->ParentRecord->IsStruct()
+		&& fld->ParentRecord->AsStruct()->Flags.contain(StructFlags::CreateTableType)
+		&& ValidateTypeDefinition(fld->FieldType.Type, TemplateParameterQualifier::Scalar);
+	}
+	return true;
+}
+
+bool IsFlagAvailable(StructDefinition const* strukt, StructFlags flag)
+{
+	return true;
+}
+
+bool IsFlagAvailable(ClassDefinition const* klass, ClassFlags flag)
+{
+	switch (flag)
+	{
+	case ClassFlags::Abstract: return !klass->Flags.contain(ClassFlags::Final);
+	case ClassFlags::Final: return !klass->Flags.contain(ClassFlags::Abstract);
+	}
+	return true;
 }

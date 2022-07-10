@@ -79,3 +79,10 @@ struct CppDatabaseFormat : CppFormatPlugin
 	virtual string ExportFileName() override { return "database.hpp"; }
 	virtual string Export(Database const&) override;
 };
+
+struct SqlSchemaFormat : FormatPlugin
+{
+	/// - full schema
+	/// - queries and stuff
+	/// - maybe even add CppSQLProxyObjectsFormat with C++ proxy/bean handling code
+};
