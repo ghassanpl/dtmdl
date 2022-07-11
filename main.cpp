@@ -660,7 +660,8 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 		TableHeadersRow();
 
 		TableNextRow();
-		int index = 0;
+		int own_field_index = 0;
+		size_t index = 0;
 		for (auto& field : def->AllFieldsOrdered())
 		{
 			PushID(index);
@@ -689,15 +690,15 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				FieldFlagsEditor(db, field);
 				TableNextColumn();
 
-				BeginDisabled(index == 0);
+				BeginDisabled(own_field_index == 0);
 				if (SmallButton(ICON_VS_TRIANGLE_UP "Up"))
-					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index - 1))); });
+					LateExec.push_back([&db, def, own_field_index] { CheckError(db.SwapFields(def, own_field_index, size_t(own_field_index - 1))); });
 				EndDisabled();
 				SameLine();
 
-				BeginDisabled(index == def->Fields().size() - 1);
+				BeginDisabled(own_field_index == def->Fields().size() - 1);
 				if (SmallButton(ICON_VS_TRIANGLE_DOWN "Down"))
-					LateExec.push_back([&db, def, index] { CheckError(db.SwapFields(def, index, size_t(index + 1))); });
+					LateExec.push_back([&db, def, own_field_index] { CheckError(db.SwapFields(def, own_field_index, size_t(own_field_index + 1))); });
 				EndDisabled();
 				SameLine();
 
@@ -712,10 +713,12 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 					else
 						OpenModal<DeleteFieldModal>(db, field, move(usages));
 				});
+
+				own_field_index++; /// only count own fields
 			}
 
-			PopID();
 			index++;
+			PopID();
 		}
 
 		EndTable();

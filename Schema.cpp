@@ -455,7 +455,9 @@ bool IsFlagAvailable(FieldDefinition const* fld, FieldFlags flag)
 	case FieldFlags::Transient: return fld->ParentRecord->IsClass();
 	case FieldFlags::Getter: return fld->ParentRecord->IsClass();
 	case FieldFlags::Setter: return fld->ParentRecord->IsClass();
-	case FieldFlags::Unique: return fld->ParentRecord->IsStruct()
+
+	case FieldFlags::Unique:
+	case FieldFlags::Indexed: return fld->ParentRecord->IsStruct()
 		&& fld->ParentRecord->AsStruct()->Flags.contain(StructFlags::CreateTableType)
 		&& ValidateTypeDefinition(fld->FieldType.Type, TemplateParameterQualifier::Scalar);
 	}

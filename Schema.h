@@ -183,6 +183,14 @@ enum class FieldFlags
 	Getter,
 	Setter,
 	Unique,
+	Indexed,
+
+	NoEdit,
+	NoView,
+	NoDebug,
+	NoClone,
+	NoSerialize,
+	NoDeserialize,
 };
 
 struct FieldDefinition
@@ -253,6 +261,11 @@ enum class StructFlags
 struct StructDefinition : RecordDefinition
 {
 	enum_flags<StructFlags> Flags;
+	/// string PrimaryKey;
+
+	/// TODO: When CreateTableType is set, give the option to choose a primary key - either a rowid or a Unique field
+	/// This will allow us to optimize the table types, same as WITHOUT ROWID (https://www.sqlite.org/withoutrowid.html)
+	/// Note: This will also mean that deleting (or moving) a field that is the primary key will need to be validated
 
 	virtual DefinitionType Type() const noexcept override { return DefinitionType::Struct; }
 

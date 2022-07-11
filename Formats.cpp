@@ -60,6 +60,13 @@ struct SimpleOutputter
 	void Unindent() { if (Indentation == 0) throw "invalid unindent"; Indentation--; }
 };
 
+string MemberName(Database const& db, FieldDefinition const* def)
+{
+	if (def->Flags.contain(FieldFlags::Private))
+		return format("{}{}", db.PrivateFieldPrefix, def->Name);
+	return def->Name;
+}
+
 string CppDeclarationFormat::FormatName()
 {
 	return "C++ Type Header";
@@ -223,11 +230,11 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 		for (auto& field : klass->Fields())
 		{
 			if (field->Flags.contain(FieldFlags::Getter))
-				out.WriteLine("auto const& {1}() const noexcept {{ return {2}{1}; }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
+				out.WriteLine("auto const& {}() const noexcept {{ return {}; }}", field->Name, MemberName(db, field.get()));
 			if (field->Flags.contain(FieldFlags::Setter))
 			{
-				out.WriteLine("void Set{1}({0}&& value) const noexcept {{ {2}{1} = ::std::move<{0}>(value); }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
-				out.WriteLine("void Set{1}({0} const& value) const noexcept {{ {2}{1} = value; }}", FormatTypeReference(db, field->FieldType), field->Name, db.PrivateFieldPrefix);
+				out.WriteLine("void Set{1}({0}&& value) const noexcept {{ {2} = ::std::move<{0}>(value); }}", FormatTypeReference(db, field->FieldType), field->Name, MemberName(db, field.get()));
+				out.WriteLine("void Set{1}({0} const& value) const noexcept {{ {2} = value; }}", FormatTypeReference(db, field->FieldType), field->Name, MemberName(db, field.get()));
 			}
 		}
 
@@ -243,7 +250,7 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 		for (auto& field : klass->Fields())
 		{
 			if (field->Flags.contain(FieldFlags::Private))
-				out.WriteLine("{} {}{} {{}};", FormatTypeReference(db, field->FieldType), db.PrivateFieldPrefix, field->Name);
+				out.WriteLine("{} {} {{}};", FormatTypeReference(db, field->FieldType), MemberName(db, field.get()));
 		}
 
 		out.WriteLine("");
@@ -391,25 +398,26 @@ string CppReflectionFormat::Export(Database const& db)
 	auto out = StartOutput(db, { "types.hpp" });
 
 	out.WriteStart("struct dtmdl_reflection {{");
+	out.WriteLine("using vt = ::DataModel::VisitType;");
 
 	out.WriteLine("template <typename TYPE, typename VISITOR>");
 	out.WriteStart("static void PreDeserialize(VISITOR& visitor, TYPE& record) {{");
-	out.WriteLine("if constexpr (::DataModel::HasPreDeserialize<Buff, VISITOR>) record.PreDeserialize(visitor);");
+	out.WriteLine("if constexpr (::DataModel::HasPreDeserialize<TYPE, VISITOR>) record.PreDeserialize(visitor);");
 	out.WriteEnd("}}");
 
 	out.WriteLine("template <typename TYPE, typename VISITOR>");
 	out.WriteStart("static void PostDeserialize(VISITOR& visitor, TYPE& record) {{");
-	out.WriteLine("if constexpr (::DataModel::HasPostDeserialize<Buff, VISITOR>) record.PostDeserialize(visitor);");
+	out.WriteLine("if constexpr (::DataModel::HasPostDeserialize<TYPE, VISITOR>) record.PostDeserialize(visitor);");
 	out.WriteEnd("}}");
 
 	out.WriteLine("template <typename TYPE, typename VISITOR>");
 	out.WriteStart("static void PreSerialize(VISITOR& visitor, TYPE const& record) {{");
-	out.WriteLine("if constexpr (::DataModel::HasPreSerialize<Buff, VISITOR>) record.PreSerialize(visitor);");
+	out.WriteLine("if constexpr (::DataModel::HasPreSerialize<TYPE, VISITOR>) record.PreSerialize(visitor);");
 	out.WriteEnd("}}");
 
 	out.WriteLine("template <typename TYPE, typename VISITOR>");
 	out.WriteStart("static void PostSerialize(VISITOR& visitor, TYPE const& record) {{");
-	out.WriteLine("if constexpr (::DataModel::HasPostSerialize<Buff, VISITOR>) record.PostSerialize(visitor);");
+	out.WriteLine("if constexpr (::DataModel::HasPostSerialize<TYPE, VISITOR>) record.PostSerialize(visitor);");
 	out.WriteEnd("}}");
 
 	for (auto def : db.UserDefinitions())
@@ -422,6 +430,47 @@ string CppReflectionFormat::Export(Database const& db)
 		case DefinitionType::Class:
 		case DefinitionType::Struct:
 
+			out.WriteLine("template <vt VISIT_TYPE, typename VISITOR>");
+			out.WriteStart("constexpr static void VisitFields(VISITOR& visitor, ::DataModel::RefAnyConst<{}> auto record) {{", def->Name());
+			out.WriteLine("if constexpr (VISIT_TYPE == vt::Deserialize) PreDeserialize(visitor, record);", def->Name());
+			out.WriteLine("if constexpr (VISIT_TYPE == vt::Serialize) PreSerialize(visitor, record);", def->Name());
+			for (auto& fld : def->AsRecord()->AllFieldsOrdered())
+			{
+				set<string> unwanted_visitors;
+				if (fld->Flags.contain(FieldFlags::Transient))
+				{
+					unwanted_visitors.insert("Deserialize");
+					unwanted_visitors.insert("Serialize");
+				}
+				if (fld->Flags.contain(FieldFlags::Private))
+				{
+					if (!fld->Flags.contain(FieldFlags::Setter))
+						unwanted_visitors.insert("Edit");
+					if (!fld->Flags.contain(FieldFlags::Getter))
+						unwanted_visitors.insert("View");
+				}
+				if (fld->Flags.contain(FieldFlags::NoEdit)) unwanted_visitors.insert("Edit");
+				if (fld->Flags.contain(FieldFlags::NoView)) unwanted_visitors.insert("View");
+				if (fld->Flags.contain(FieldFlags::NoDebug)) unwanted_visitors.insert("Debug");
+				if (fld->Flags.contain(FieldFlags::NoClone)) unwanted_visitors.insert("Clone");
+				if (fld->Flags.contain(FieldFlags::NoSerialize)) unwanted_visitors.insert("Serialize");
+				if (fld->Flags.contain(FieldFlags::NoDeserialize)) unwanted_visitors.insert("Deserialize");
+
+				if (unwanted_visitors.size())
+				{
+					out.WriteLine("if constexpr (!({}))", string_ops::join(unwanted_visitors | views::transform([](string const& visitor) { return "VISIT_TYPE == vt::" + visitor; }), " || "));
+					out.Indent();
+				}
+				out.WriteLine("visitor(record.{}, \"{}\", dtmdl_{}_Mirror_Tag);", MemberName(db, fld), fld->Name, fld->ParentRecord->Name());
+				if (unwanted_visitors.size())
+					out.Unindent();
+			}
+			out.WriteLine("if constexpr (VISIT_TYPE == vt::Deserialize) PostDeserialize(visitor, record);", def->Name());
+			out.WriteLine("if constexpr (VISIT_TYPE == vt::Serialize) PostSerialize(visitor, record);", def->Name());
+			out.WriteEnd("}}");
+			break;
+
+			/*
 			out.WriteLine("template <typename VISITOR>");
 			out.WriteStart("constexpr static void Deserialize(VISITOR& visitor, {}& record) {{", def->Name());
 			out.WriteLine("PreDeserialize(visitor, record);", def->Name());
@@ -430,7 +479,6 @@ string CppReflectionFormat::Export(Database const& db)
 				if (!fld->Flags.contain(FieldFlags::Transient))
 					out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			}
-			out.WriteLine("PostDeserialize(visitor, record);", def->Name());
 			out.WriteEnd("}}");
 
 			out.WriteLine("template <typename VISITOR>");
@@ -441,7 +489,6 @@ string CppReflectionFormat::Export(Database const& db)
 				if (!fld->Flags.contain(FieldFlags::Transient))
 					out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			}
-			out.WriteLine("PostSerialize(visitor, record);", def->Name());
 			out.WriteEnd("}}");
 
 			out.WriteLine("template <typename VISITOR>");
@@ -450,7 +497,7 @@ string CppReflectionFormat::Export(Database const& db)
 				out.WriteLine("visitor(record.{0}, \"{0}\", dtmdl_{1}_Mirror_Tag);", fld->Name, fld->ParentRecord->Name());
 			out.WriteEnd("}}");
 			break;
-
+			*/
 		case DefinitionType::Enum:
 			out.WriteLine("consteval static ::std::string_view EnumTypeName(::std::type_identity<{0}>) {{ return \"{0}\"; }}", def->Name());
 			out.WriteLine("consteval static ::std::size_t EnumCount(::std::type_identity<{0}>) {{ return {1}; }}", def->Name(), def->AsEnum()->EnumeratorCount());
@@ -532,6 +579,42 @@ string CppReflectionFormat::Export(Database const& db)
 string CppTablesFormat::Export(Database const& db)
 {
 	auto out = StartOutput(db, { "types.hpp" });
+
+	for (auto def : db.Structs())
+	{
+		if (!def->Flags.contain(StructFlags::CreateTableType))
+			continue;
+
+		out.WriteStart("struct dtmdl_{0}Table : ::DataModel::TableBase<dtmdl_{0}Table> {{", def->Name());
+		out.WriteLine("using RowType = {};", def->Name());
+		out.WriteLine("template <::DataModel::FixedString COLUMN>");
+		out.WriteStart("static constexpr auto GetField() {{");
+		for (auto& field : def->AllFieldsOrdered())
+		{
+			out.WriteLine("if constexpr (COLUMN.eq(\"{}\")) {{ return &{}::{}; }} else", field->Name, def->Name(), MemberName(db, field));
+		}
+		out.WriteLine("static_assert(::std::is_same_v<decltype(COLUMN), void>, \"column name not an (accessible) field in {}\");", def->Name());
+		out.WriteEnd("}}");
+
+		out.Unindent();
+		out.WriteLine("protected:");
+		out.Indent();
+		out.WriteLine("friend struct ::DataModel::TableBase<dtmdl_{}Table>;", def->Name());
+		out.WriteLine("::std::int64_t mLastRowID = 0;");
+		out.WriteLine("::std::map<::std::int64_t, {}> mRows;", def->Name());
+		for (auto& field : def->AllFieldsOrdered())
+		{
+			if (field->Flags.contain(FieldFlags::Indexed))
+			{
+				if (field->Flags.contain(FieldFlags::Unique))
+					out.WriteLine("::std::map<{}, ::std::int64_t, ::std::less<>> mOrderedBy{};", FormatTypeReference(db, field->FieldType), field->Name);
+				else
+					out.WriteLine("::std::multimap<{}, ::std::int64_t, ::std::less<>> mOrderedBy{};", FormatTypeReference(db, field->FieldType), field->Name);
+			}
+		}
+		out.WriteEnd("}};");
+	}
+
 	return FinishOutput(db);
 }
 
