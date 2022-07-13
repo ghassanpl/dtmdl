@@ -6,10 +6,19 @@ enum class DefinitionType
 	Enum,
 	Struct,
 	Class,
-
 	Union,
 	Alias,
+
 	Attribute,
+};
+
+static constexpr const char* IconsForDefinitionType[magic_enum::enum_count<DefinitionType>()] = {
+	"",
+	ICON_VS_SYMBOL_ENUM,
+	ICON_VS_SYMBOL_STRUCTURE,
+	ICON_VS_SYMBOL_CLASS,
+	ICON_VS_SYMBOL_MISC,
+	ICON_VS_ARROW_SMALL_RIGHT,
 };
 
 struct TypeDefinition;
@@ -111,6 +120,7 @@ struct TypeDefinition
 
 	auto const& Schema() const noexcept { return mSchema; }
 	auto const& Name() const noexcept { return mName; }
+	string QualifiedName(string_view sep = "::") const noexcept;
 	string IconName() const noexcept { return string{ Icon() } + Name(); }
 	string IconNameWithParent() const noexcept { 
 		if (mBaseType)
@@ -430,6 +440,8 @@ struct Schema
 	size_t Hash() const { return 0; }
 
 	static bool IsParent(TypeDefinition const* parent, TypeDefinition const* potential_child);
+
+	string Namespace = "database";
 
 private:
 

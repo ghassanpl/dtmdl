@@ -118,10 +118,8 @@ struct Database
 
 	auto VoidType() const noexcept { return mSchema.VoidType(); }
 
-	string Namespace;
+	//string Namespace;
 	string PrivateFieldPrefix = "m";
-
-	set<string, less<>> FoldedTypes;
 
 private:
 

@@ -18,7 +18,7 @@ void TextUD(string_view s)
 	ImGui::PopStyleColor();
 }
 
-TypeDefinition const* mOpenType = nullptr;
+TypeDefinition const* mSelectedType = nullptr;
 
 void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter, const char* label)
 {

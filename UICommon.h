@@ -1,6 +1,7 @@
 #pragma once
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 #include "ImGuiHelpers.h"
 
@@ -175,6 +176,6 @@ extern vector<function<void()>> LateExec;
 
 using FilterFunc = std::function<bool(TypeDefinition const*)>;
 
-extern TypeDefinition const* mOpenType;
+extern TypeDefinition const* mSelectedType;
 
 void TypeChooser(Database& db, TypeReference& ref, FilterFunc filter = {}, const char* label = nullptr);

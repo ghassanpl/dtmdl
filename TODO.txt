@@ -1,7 +1,32 @@
-* maybe plugin-able additional builtin types? like:
-	* json
-	* glm vecs
-	* filesystem path
-	* other types you might have in your code-base
-	but then how to use them in different languages?
 * break Schema's dependend on Database (i.e. the friend declarations)
+
+struct Trigger
+{
+	enum { Before, After, InsteadOf } When;
+	enum { Delete, Insert, Update } On;
+	set<string> Columns;
+	function<void(row& new, row& old)> Callback;
+};
+
+vector<Trigger> mTriggers;
+
+using row = std::pair<rowid const, StructType>;
+
+Select(
+	[Where{filter func}],
+	[
+		OrderBy<"Name"[, Comparator]> /// Only valid if using GroupedBy<column> or Columns<> as the value getter
+	| OrderBy{compare func}
+	],
+	[
+		Columns<"Size", "Width"> 
+	| Values{function returning tuple of values} 
+	| GroupedBy<"Column">{ function<optional<ResultTuple>(range<row&>)> } 
+	| GroupedBy{ 
+			function<GroupType(row&)> grouping_function, 
+			function<optional<ResultTuple>(GroupType, range<row&>)> aggregating_function 
+		}
+	| All
+	]
+	/// Limit+Offset
+)

@@ -763,6 +763,8 @@ void Database::LoadSchema(json const& from)
 {
 	auto& schema = from.get_ref<json::object_t const&>();
 
+	mSchema.Namespace = get(schema, "namespace", "", jtype::string);
+
 	auto version = (int)schema.at("version");
 	if (!(version == 1))
 		throw std::runtime_error("invalid schema version number");
@@ -793,12 +795,11 @@ void Database::LoadSchema(json const& from)
 
 json Database::Save() const
 {
-	return json::object({ { "namespace", Namespace }});
+	return json::object();
 }
 
 void Database::Load(json const& j)
 {
-	Namespace = get(j, "namespace", "", jtype::string);
 }
 
 void Database::AddFormatPlugin(unique_ptr<FormatPlugin> plugin)

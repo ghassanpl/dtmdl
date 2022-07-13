@@ -6,9 +6,74 @@
 #include <imgui_stdlib.h>
 
 #include <ghassanpl/string_ops.h>
+#include "ImGuiHelpers.h"
 
 namespace ImGui
 {
+  bool ToggleButton(const char* label, bool& option, const ImVec2& size_arg, ImGuiButtonFlags flags)
+  {
+    ImGuiWindow* window = GetCurrentWindow();
+    if (window->SkipItems)
+      return false;
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID id = window->GetID(label);
+    const ImVec2 label_size = CalcTextSize(label, NULL, true);
+
+    ImVec2 pos = window->DC.CursorPos;
+    if ((flags & ImGuiButtonFlags_AlignTextBaseLine) && style.FramePadding.y < window->DC.CurrLineTextBaseOffset) // Try to vertically align buttons that are smaller/have no padding so that text baseline matches (bit hacky, since it shouldn't be a flag)
+      pos .y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
+    ImVec2 size = CalcItemSize(size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f);
+
+    const ImRect bb(pos, pos + size);
+    ItemSize(size, style.FramePadding.y);
+    if (!ItemAdd(bb, id))
+      return false;
+
+    if (g.LastItemData.InFlags & ImGuiItemFlags_ButtonRepeat)
+      flags |= ImGuiButtonFlags_Repeat;
+
+    bool hovered, held;
+    bool pressed = ButtonBehavior(bb, id, &hovered, &held, flags);
+    if (pressed)
+      option = !option;
+
+    // Render
+    const ImU32 col = GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    RenderNavHighlight(bb, id);
+    RenderFrame(bb.Min, bb.Max, col, true, style.FrameRounding);
+    if (option)
+    {
+      window->DrawList->AddRect(bb.Min + ImVec2{1,1}, bb.Max - ImVec2{ 1,1 }, GetColorU32(ImGuiCol_CheckMark), 0, 0, 1);
+    }
+
+    if (g.LogEnabled)
+      LogSetNextTextDecoration("[", "]");
+    RenderTextClipped(bb.Min + style.FramePadding, bb.Max - style.FramePadding, label, NULL, &label_size, style.ButtonTextAlign, &bb);
+
+    // Automatically close popups
+    //if (pressed && !(flags & ImGuiButtonFlags_DontClosePopups) && (window->Flags & ImGuiWindowFlags_Popup))
+    //    CloseCurrentPopup();
+
+    IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
+    return pressed;
+  }
+
+  bool ToggleButtonFlags(const char* label, unsigned& flags, unsigned flag_value, const ImVec2& size, ImGuiButtonFlags button_flags)
+  {
+    bool option = flags & flag_value;
+    auto pressed = ToggleButton(label, option, size, button_flags);
+    if (pressed)
+    {
+      if (option)
+        flags |= flag_value;
+      else
+        flags &= ~flag_value;
+    }
+    return pressed;
+  }
+
   // https://github.com/forrestthewoods/lib_fts
 
   // Forward declarations for "private" implementation
@@ -316,4 +381,18 @@ namespace ImGui
 
     return value_changed;
   }
+
+
+  bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size)
+  {
+    using namespace ImGui;
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    ImGuiID id = window->GetID("##Splitter");
+    ImRect bb;
+    bb.Min = window->DC.CursorPos + (split_vertically ? ImVec2(*size1, 0.0f) : ImVec2(0.0f, *size1));
+    bb.Max = bb.Min + CalcItemSize(split_vertically ? ImVec2(thickness, splitter_long_axis_size) : ImVec2(splitter_long_axis_size, thickness), 0.0f, 0.0f);
+    return SplitterBehavior(bb, id, split_vertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, min_size1, min_size2, 0.0f);
+  }
+
 }

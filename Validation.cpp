@@ -90,6 +90,10 @@ result<void, string> ValidateTypeDefinition(TypeDefinition const* type, Template
 	return success();
 }
 
+bool MatchesQualifier(TypeDefinition const* type, TemplateParameterQualifier qualifier) { return ValidateTypeDefinition(type, qualifier).has_value(); }
+
+bool MatchesQualifier(TypeReference const& type, TemplateParameterQualifier qualifier) { return MatchesQualifier(type.Type, qualifier); }
+
 result<void, string> ValidateTemplateArgument(TemplateArgument const& arg, TemplateParameter const& param)
 {
 	if (param.Qualifier == TemplateParameterQualifier::Size)

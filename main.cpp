@@ -84,7 +84,7 @@ bool TypeNameEditor(Database& db, TypeDefinition const* def)
 			SetNextItemWidth(GetContentRegionAvail().x);
 			return InputText("###typename", &name, ImGuiInputTextFlags_EnterReturnsTrue);
 		},
-		[&db, def](TypeDefinition const* def, string new_name) { mOpenType = def; return db.SetTypeName(def, move(new_name)); },
+		[&db, def](TypeDefinition const* def, string new_name) { return db.SetTypeName(def, move(new_name)); },
 		[](TypeDefinition const* def) -> auto const& { return def->Name(); }
 	);
 }
@@ -101,6 +101,14 @@ bool EnumeratorNameEditor(Database& db, EnumeratorDefinition const* def)
 		bind_front(&Database::SetEnumeratorName, &db),
 		[](EnumeratorDefinition const* def) -> auto const& { return def->Name; }
 	);
+}
+
+bool ToolButton(const char* icon, const char* name)
+{
+	auto result = ImGui::SmallButton(icon);
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", name);
+	return result;
 }
 
 bool EnumeratorValueEditor(Database& db, EnumeratorDefinition const* def)
@@ -691,21 +699,21 @@ void EditRecord(Database& db, RecordDefinition const* def, bool is_struct)
 				TableNextColumn();
 
 				BeginDisabled(own_field_index == 0);
-				if (SmallButton(ICON_VS_TRIANGLE_UP "Up"))
+				if (ToolButton(ICON_VS_TRIANGLE_UP, "Up"))
 					LateExec.push_back([&db, def, own_field_index] { CheckError(db.SwapFields(def, own_field_index, size_t(own_field_index - 1))); });
 				EndDisabled();
 				SameLine();
 
 				BeginDisabled(own_field_index == def->Fields().size() - 1);
-				if (SmallButton(ICON_VS_TRIANGLE_DOWN "Down"))
+				if (ToolButton(ICON_VS_TRIANGLE_DOWN, "Down"))
 					LateExec.push_back([&db, def, own_field_index] { CheckError(db.SwapFields(def, own_field_index, size_t(own_field_index + 1))); });
 				EndDisabled();
 				SameLine();
 
-				SmallButton(ICON_VS_EXPAND_ALL "Duplicate"); SameLine();
-				SmallButton(ICON_VS_COPY "Copy"); SameLine();
+				ToolButton(ICON_VS_EXPAND_ALL, "Duplicate"); SameLine();
+				ToolButton(ICON_VS_COPY, "Copy"); SameLine();
 
-				SmallButton(ICON_VS_TRASH "Delete");
+				ToolButton(ICON_VS_TRASH, "Delete");
 				DoConfirmUI("Are you sure you want to delete this field?", [&db, field]() {
 					auto usages = db.StoresWithFieldData(field);
 					if (usages.empty())
@@ -775,20 +783,20 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 			TableNextColumn();
 
 			BeginDisabled(index == 0);
-			if (SmallButton(ICON_VS_TRIANGLE_UP "Up"))
+			if (ToolButton(ICON_VS_TRIANGLE_UP, "Up"))
 				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index - 1)); });
 			EndDisabled();
 			SameLine();
 
 			BeginDisabled(index == enoom->Enumerators().size() - 1);
-			if (SmallButton(ICON_VS_TRIANGLE_DOWN "Down"))
+			if (ToolButton(ICON_VS_TRIANGLE_DOWN, "Down"))
 				LateExec.push_back([&db, enoom, index] { CheckError(db.SwapEnumerators(enoom, index, index + 1)); });
 			EndDisabled();
 			SameLine();
 
-			SmallButton(ICON_VS_EXPAND_ALL "Duplicate"); SameLine();
-			SmallButton(ICON_VS_COPY "Copy"); SameLine();
-			SmallButton(ICON_VS_TRASH "Delete");
+			ToolButton(ICON_VS_EXPAND_ALL, "Duplicate"); SameLine();
+			ToolButton(ICON_VS_COPY, "Copy"); SameLine();
+			ToolButton(ICON_VS_TRASH, "Delete");
 			DoConfirmUI("Are you sure you want to delete this enumerator?", [&db, enumerator]() {
 				auto usages = db.StoresWithEnumeratorData(enumerator);
 				if (usages.empty())
@@ -807,74 +815,119 @@ void EditEnum(Database& db, EnumDefinition const* enoom)
 
 unique_ptr<Database> mCurrentDatabase = nullptr;
 
+string Multiples(string_view objs)
+{
+	if (objs.ends_with("s"))
+		return format("{}es", objs);
+	return format("{}s", objs);
+}
+
 void TypesTab()
 {
 	using namespace ImGui;
 	Spacing();
 	if (Button(ICON_VS_SYMBOL_STRUCTURE "Add Struct"))
-		mOpenType = mCurrentDatabase->AddNewStruct().value();
+		mSelectedType = mCurrentDatabase->AddNewStruct().value();
 	SameLine();
 	if (Button(ICON_VS_SYMBOL_CLASS "Add Class"))
-		mOpenType = mCurrentDatabase->AddNewClass().value();
+		mSelectedType = mCurrentDatabase->AddNewClass().value();
 	SameLine();
 	if (Button(ICON_VS_SYMBOL_ENUM "Add Enum"))
-		mOpenType = mCurrentDatabase->AddNewEnum().value();
+		mSelectedType = mCurrentDatabase->AddNewEnum().value();
 	SameLine();
-	Button("Add Union"); SameLine();
-	Button("Add Alias"); SameLine();
+	Button(ICON_VS_SYMBOL_MISC "Add Union"); SameLine();
+	Button(ICON_VS_ARROW_SMALL_RIGHT "Add Alias"); SameLine();
 
+	SeparatorEx(ImGuiSeparatorFlags_Vertical); SameLine();
+	
+	TextU("Sort by: "); SameLine();
 
 	static int sort = 0;
-	RadioButton("Sort by Name", &sort, 0); SameLine();
-	RadioButton("Sort by Type", &sort, 1);
+	RadioButton("Name", &sort, 0); SameLine();
+	RadioButton("Type", &sort, 1); SameLine();
+
+	SeparatorEx(ImGuiSeparatorFlags_Vertical); SameLine();
+
+	TextU("Show: "); SameLine();
+
+	static unsigned filter_types = -1;
+	using enum DefinitionType;
+	for (auto type : { Enum, Struct, Class, Union, Alias })
+	{
+		//CheckboxFlags(IconsForDefinitionType[(int)type], &filter_types, (1u << unsigned(type))); SameLine();
+		auto label = format("{}{}", IconsForDefinitionType[(int)type], Multiples(magic_enum::enum_name(type)));
+		ToggleButtonFlags(label.c_str(), filter_types, (1u << unsigned(type))); SameLine();
+	}
+	NewLine();
 
 	Spacing();
 	Separator();
 	Spacing();
 
-	BeginChild("Types", { 0.0f, 0.0f });
 
-	for (auto def : mCurrentDatabase->Definitions())
+	/*
+	float h = GetContentRegionAvail().y;
+	static float sz1 = 0.2f;
+	static float sz2 = 0.8f;
+	if (sz1 == -1)
 	{
-		PushID(def);
-
-		if (def == mOpenType)
-		{
-			SetNextItemOpen(true);
-			mOpenType = nullptr;
-		}
-
-		if (auto strukt = dynamic_cast<StructDefinition const*>(def))
-		{
-			if (CollapsingHeader(def->IconNameWithParent().c_str()))
-			{
-				Indent();
-				EditRecord(*mCurrentDatabase, strukt, true);
-				Unindent();
-			}
-		}
-		else if (auto klass = dynamic_cast<ClassDefinition const*>(def))
-		{
-			if (CollapsingHeader(def->IconNameWithParent().c_str()))
-			{
-				Indent();
-				EditRecord(*mCurrentDatabase, klass, false);
-				Unindent();
-			}
-		}
-		else if (auto eenoom = dynamic_cast<EnumDefinition const*>(def))
-		{
-			if (CollapsingHeader(def->IconNameWithParent().c_str()))
-			{
-				Indent();
-				EditEnum(*mCurrentDatabase, eenoom);
-				Unindent();
-			}
-		}
-		PopID();
+		sz1 = GetWindowWidth() * 0.3f;
+		sz2 = GetWindowWidth() * 0.7f;
 	}
+	Splitter(true, 8.0f, &sz1, &sz2, 0.2f, 0.2f, h);
+	*/
 
+	bool selected_in_list = false;
+	for (auto def : mCurrentDatabase->UserDefinitions())
+	{
+		if (!(filter_types & (1 << int(def->Type()))))
+			continue;
+		if (def == mSelectedType)
+			selected_in_list = true;
+	}
+	if (mSelectedType && !selected_in_list)
+		mSelectedType = nullptr;
+
+	if (BeginChild("Types", { 300.0f, -1.0f }))
+	{
+		if (BeginListBox("##", { -1.0f, -1.0f }))
+		{
+			for (auto def : mCurrentDatabase->UserDefinitions())
+			{
+				AssumingNotNull(def);
+				if (!(filter_types & (1 << int(def->Type()))))
+					continue;
+
+				bool selected = def == mSelectedType;
+				if (Selectable(def->IconNameWithParent().c_str(), selected))
+					mSelectedType = def;
+			}
+
+			EndListBox();
+		}
+	}
 	EndChild();
+
+	SameLine();
+
+	if (BeginChild("Type Properties", {-1.0f, -1.0f}))
+	{
+		if (mSelectedType)
+		{
+			if (auto strukt = dynamic_cast<StructDefinition const*>(mSelectedType))
+				EditRecord(*mCurrentDatabase, strukt, true);
+			else if (auto klass = dynamic_cast<ClassDefinition const*>(mSelectedType))
+				EditRecord(*mCurrentDatabase, klass, false);
+			else if (auto eenoom = dynamic_cast<EnumDefinition const*>(mSelectedType))
+				EditEnum(*mCurrentDatabase, eenoom);
+		}
+		else
+		{
+			TextU("Select a type on the left");
+		}
+	}
+	EndChild();
+
 }
 
 void DataTab();
@@ -905,7 +958,8 @@ void PropertiesTab()
 	auto dir = mCurrentDatabase->Directory().string();
 	LabelText("Directory", "%s", dir.c_str());
 
-	InputText("Namespace", &mCurrentDatabase->Namespace);
+	/// TODO: validation - identifier, cannot be "std"
+	//InputText("Namespace", &mCurrentDatabase->Schema().Namespace);
 }
 
 int main(int argc, char** argv)

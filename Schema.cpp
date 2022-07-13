@@ -8,6 +8,8 @@ StructDefinition const* TypeDefinition::AsStruct() const noexcept { return IsStr
 ClassDefinition const* TypeDefinition::AsClass() const noexcept { return IsClass() ? static_cast<ClassDefinition const*>(this) : nullptr; }
 EnumDefinition const* TypeDefinition::AsEnum() const noexcept { return IsEnum() ? static_cast<EnumDefinition const*>(this) : nullptr; }
 
+string TypeDefinition::QualifiedName(string_view sep) const noexcept { return format("{}{}{}", mSchema.Namespace, sep, mName); }
+
 string to_string(TypeReference const& tr)
 {
 	return tr.ToString();
@@ -299,6 +301,8 @@ Schema::Schema()
 
 	/// TODO: Color ? Or should we leave that to attributes?
 	/// TODO: Path ?
+	/// TODO: row<StructType> -> holds a variant<pair<StructTypeTable*, StructType*>, pair<string table_id, string row_key>> and is resolved when (de)serializing via a Database
+	///				or can be resolved manually
 }
 
 TypeDefinition const* Schema::ResolveType(string_view name) const

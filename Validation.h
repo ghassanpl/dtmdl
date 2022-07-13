@@ -10,3 +10,5 @@ result<void, string> ValidateType(TypeReference const& type);
 result<void, string> ValidateFieldType(FieldDefinition const* def, TypeReference const& type);
 
 result<void, string> ValidateTypeDefinition(TypeDefinition const* type, TemplateParameterQualifier qualifier);
+bool MatchesQualifier(TypeDefinition const* type, TemplateParameterQualifier qualifier);
+bool MatchesQualifier(TypeReference const& type, TemplateParameterQualifier qualifier);
