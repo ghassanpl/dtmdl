@@ -207,7 +207,13 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	out.Indent();
 
 	out.WriteLine("virtual ::DataModel::dtmdl_TypeInfo const* dtmdl_Type() const noexcept override {{ return &dtmdl_{0}_type_info; }}", klass->Name());
-	out.WriteLine("virtual void dtmdl_Mark() noexcept override;");
+	out.WriteStart("virtual void dtmdl_Mark() noexcept override {{");
+	out.WriteLine("using ::DataModel::dtmdl_Mark;");
+	for (auto& field : klass->Fields())
+	{
+		out.WriteLine("dtmdl_Mark(this->{});", MemberName(db, field.get()));
+	}
+	out.WriteEnd("}}");
 	out.Nl();
 
 	bool any_accessors = false;
@@ -373,6 +379,11 @@ string CppDeclarationFormat::Export(Database const& db)
 	}
 	out.WriteEnd("}};");
 
+	for (auto def : db.Structs())
+	{
+		out.WriteLine("inline void dtmdl_MarkStruct({0}& obj);", def->QualifiedName());
+	}
+
 	set<TypeDefinition const*> closed_types;
 	vector<TypeDefinition const*> ordered_types;
 
@@ -410,6 +421,17 @@ string CppDeclarationFormat::Export(Database const& db)
 	}
 
 	out.Nl();
+
+	for (auto def : db.Structs())
+	{
+		out.WriteStart("inline void dtmdl_MarkStruct({0}& obj) {{", def->QualifiedName());
+		out.WriteLine("using ::DataModel::dtmdl_Mark;");
+		for (auto& field : def->Fields())
+		{
+			out.WriteLine("dtmdl_Mark(obj.{});", field->Name);
+		}
+		out.WriteEnd("}}");
+	}
 
 	return FinishOutput(db);
 }
@@ -559,6 +581,25 @@ string CppReflectionFormat::Export(Database const& db)
 			break;
 		}
 	}
+
+	out.Nl();
+	out.WriteLine("private:");
+	out.WriteLine("friend struct dtmdl_database;");
+
+	for (auto klass : db.Classes())
+	{
+		out.Nl();
+		out.WriteLine("/// {}", klass->QualifiedName());
+		
+		out.WriteLine("static {0}* New{1}() {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static {0}* New(::std::type_identity<{0}>) {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static {0}* Construct{1}(void* memory) {{ return new (memory){0}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static void Destruct{1}(void* memory) {{ reinterpret_cast<{0}*>(memory)->~{1}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static void Destruct({0}* memory) {{ memory->~{1}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static void Delete{1}(void* memory) {{ delete reinterpret_cast<{0}*>(memory); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static void Delete({0}* memory) {{ delete memory; }}", klass->QualifiedName(), klass->Name());
+	}
+
 	out.WriteEnd("}};");
 
 	for (auto def : db.UserDefinitions())
@@ -613,9 +654,13 @@ string CppTablesFormat::Export(Database const& db)
 
 string CppDatabaseFormat::Export(Database const& db)
 {
-	auto out = StartOutput(db, { "types.hpp" });
+	auto out = StartOutput(db, { "types.hpp", "reflection.hpp" });
 
-	out.WriteStart("struct dtmdl_database {{");
+	out.WriteStart("struct dtmdl_database : public ::DataModel::GCHeap<dtmdl_reflection> {{");
+	out.WriteLine("template <::std::derived_from<::DataModel::BaseClass> T>");
+	out.WriteStart("::DataModel::NativeTypes::Own<T> New() {{");
+	out.WriteLine("return this->Add(::std::unique_ptr<T>(dtmdl_reflection::New(::std::type_identity<T>{{}})));");
+	out.WriteEnd("}}");
 	out.WriteEnd("}};");
 
 	return FinishOutput(db);

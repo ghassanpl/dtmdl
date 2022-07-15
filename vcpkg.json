@@ -12,14 +12,8 @@
       "name": "imgui",
       "features": ["freetype"]
     },
-
+    
     "kubazip"
-  ],
 
-  "description": [
-    "boost-container-hash",
-    "scnlib",
-    "sqlitecpp",
-    "blend2d"
   ]
 }
