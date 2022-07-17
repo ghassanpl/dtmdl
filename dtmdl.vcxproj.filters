@@ -16,6 +16,9 @@
     <Filter Include="Source Files\External">
       <UniqueIdentifier>{81600726-7d3e-4a4b-9f7d-53654d4ece22}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Formats">
+      <UniqueIdentifier>{1a8a2f7b-3214-4aa0-b623-62ff40bbddcd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -63,6 +66,24 @@
     <ClCompile Include="UICommon.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CppFormatPlugin.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
+    <ClCompile Include="CppDeclarationFormat.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
+    <ClCompile Include="CppReflectionFormat.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
+    <ClCompile Include="CppTablesFormat.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
+    <ClCompile Include="CppDatabaseFormat.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
+    <ClCompile Include="CSharpFormats.cpp">
+      <Filter>Source Files\Formats</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />
@@ -109,6 +130,30 @@
     </ClInclude>
     <ClInclude Include="dtmdl.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CppFormats.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="FormatPlugin.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CSharpFormats.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CppFormatPlugin.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CppDeclarationFormat.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CppReflectionFormat.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CppTablesFormat.h">
+      <Filter>Source Files\Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="CppDatabaseFormat.h">
+      <Filter>Source Files\Formats</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

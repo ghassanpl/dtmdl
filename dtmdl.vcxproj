@@ -27,6 +27,12 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="CppDatabaseFormat.cpp" />
+    <ClCompile Include="CppDeclarationFormat.cpp" />
+    <ClCompile Include="CppFormatPlugin.cpp" />
+    <ClCompile Include="CppReflectionFormat.cpp" />
+    <ClCompile Include="CppTablesFormat.cpp" />
+    <ClCompile Include="CSharpFormats.cpp" />
     <ClCompile Include="Database.cpp" />
     <ClCompile Include="DataStore.cpp" />
     <ClCompile Include="DataTab.cpp" />
@@ -56,9 +62,17 @@
   <ItemGroup>
     <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_folder_browser.h" />
     <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_message_box.h" />
+    <ClInclude Include="CppDatabaseFormat.h" />
+    <ClInclude Include="CppFormatPlugin.h" />
+    <ClInclude Include="CppFormats.h" />
+    <ClInclude Include="CppDeclarationFormat.h" />
+    <ClInclude Include="CppReflectionFormat.h" />
+    <ClInclude Include="CppTablesFormat.h" />
+    <ClInclude Include="CSharpFormats.h" />
     <ClInclude Include="Database.h" />
     <ClInclude Include="DataStore.h" />
     <ClInclude Include="dtmdl.h" />
+    <ClInclude Include="FormatPlugin.h" />
     <ClInclude Include="Formats.h" />
     <ClInclude Include="ImGuiHelpers.h" />
     <ClInclude Include="imgui_impl_sdl.h" />

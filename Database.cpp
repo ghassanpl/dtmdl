@@ -638,6 +638,7 @@ namespace dtmdl
 		AddFormatPlugin(make_unique<CppDatabaseFormat>());
 		AddFormatPlugin(make_unique<CppReflectionFormat>());
 		AddFormatPlugin(make_unique<CppTablesFormat>());
+		AddFormatPlugin(make_unique<CSharpDeclarationFormat>());
 
 		mDataStores.emplace("main", DataStore(mSchema));
 
