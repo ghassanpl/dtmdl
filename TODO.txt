@@ -1,4 +1,5 @@
-* break Schema's dependend on Database (i.e. the friend declarations)
+* break Schema's dependend on Database (i.e. the friend declarations) and the icon headers
+* should Enums have an underlying type
 
 struct Trigger
 {

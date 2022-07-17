@@ -107,6 +107,9 @@
     <ClInclude Include="UICommon.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="dtmdl.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="TODO.txt" />

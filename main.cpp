@@ -14,6 +14,8 @@
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_message_box.h"
 #include "X:\Code\Native\ghassanpl\windows_message_box\windows_folder_browser.h"
 
+using namespace dtmdl;
+
 struct IModal
 {
 	virtual ~IModal() noexcept = default;
@@ -930,7 +932,12 @@ void TypesTab()
 
 }
 
-void DataTab();
+namespace dtmdl
+{
+
+	void DataTab();
+
+}
 
 void AttributesTab()
 {
@@ -958,7 +965,7 @@ void PropertiesTab()
 	auto dir = mCurrentDatabase->Directory().string();
 	LabelText("Directory", "%s", dir.c_str());
 
-	/// TODO: validation - identifier, cannot be "std"
+	/// TODO: validation - identifier, cannot be "std" or "dtmdl"
 	//InputText("Namespace", &mCurrentDatabase->Schema().Namespace);
 }
 

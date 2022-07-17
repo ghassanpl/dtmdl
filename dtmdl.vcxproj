@@ -58,6 +58,7 @@
     <ClInclude Include="..\..\ghassanpl\windows_message_box\windows_message_box.h" />
     <ClInclude Include="Database.h" />
     <ClInclude Include="DataStore.h" />
+    <ClInclude Include="dtmdl.h" />
     <ClInclude Include="Formats.h" />
     <ClInclude Include="ImGuiHelpers.h" />
     <ClInclude Include="imgui_impl_sdl.h" />
