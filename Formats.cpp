@@ -206,14 +206,8 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	out.WriteLine("public:");
 	out.Indent();
 
-	out.WriteLine("virtual ::DataModel::dtmdl_TypeInfo const* dtmdl_Type() const noexcept override {{ return &dtmdl_{0}_type_info; }}", klass->Name());
-	out.WriteStart("virtual void dtmdl_Mark() noexcept override {{");
-	out.WriteLine("using ::DataModel::dtmdl_Mark;");
-	for (auto& field : klass->Fields())
-	{
-		out.WriteLine("dtmdl_Mark(this->{});", MemberName(db, field.get()));
-	}
-	out.WriteEnd("}}");
+	out.WriteLine("virtual ::DataModel::TypeInfo const* dtmdl_Type() const noexcept override;");
+	out.WriteLine("virtual void dtmdl_Mark() noexcept override;");
 	out.Nl();
 
 	bool any_accessors = false;
@@ -268,9 +262,9 @@ void CppDeclarationFormat::WriteClass(SimpleOutputter& out, Database const& db, 
 	{
 		for (auto derived_class : db.Classes() | views::filter([klass](auto potential_child) { return potential_child->IsChildOf(klass); }))
 		{
-			out.WriteLine("bool Is{0}() const noexcept {{ return this->dtmdl_Type() == &dtmdl_{0}_type_info; }}", derived_class->Name());
-			out.WriteLine("auto As{0}() const noexcept -> ::DataModel::NativeTypes::Ref<{0} const> {{ return Is{0}() ? reinterpret_cast<{0} const*>(this) : nullptr; }}", derived_class->Name());
-			out.WriteLine("auto As{0}() noexcept -> ::DataModel::NativeTypes::Ref<{0}> {{ return Is{0}() ? reinterpret_cast<{0}*>(this) : nullptr; }}", derived_class->Name());
+			out.WriteLine("bool Is{0}() const noexcept;", derived_class->Name());
+			out.WriteLine("auto As{0}() const noexcept -> ::DataModel::NativeTypes::Ref<{0} const>;", derived_class->Name());
+			out.WriteLine("auto As{0}() noexcept -> ::DataModel::NativeTypes::Ref<{0}>;", derived_class->Name());
 		}
 		out.Nl();
 	}
@@ -340,6 +334,22 @@ void CppDeclarationFormat::WriteEnum(SimpleOutputter& out, Database const& db, E
 	out.WriteEnd("}};");
 }
 
+string ToCppTypeReference(TypeReference const& ref);
+
+string ToCppTemplateArgument(TemplateArgument const& ref)
+{
+	if (ref.index() == 0)
+		return ToCppTypeReference(get<TypeReference>(ref));
+	return to_string(get<uint64_t>(ref));
+}
+
+string ToCppTypeReference(TypeReference const& ref)
+{
+	if (!ref.Type)
+		return "::DataModel::TypeReference{}";
+	return format("::DataModel::TypeReference{{&dtmdl_{}_type_info, {{{}}} }}", ref.Type->Name(), string_ops::join(ref.TemplateArguments, ", ", ToCppTemplateArgument));
+}
+
 string CppDeclarationFormat::Export(Database const& db)
 {
 	auto out = StartOutput(db);
@@ -355,34 +365,6 @@ string CppDeclarationFormat::Export(Database const& db)
 	}
 
 	out.Nl();
-
-	out.WriteStart("enum mirror_tags {{");
-	for (auto def : db.UserDefinitions())
-	{
-		out.WriteLine("dtmdl_{}_Mirror_Tag,", def->Name());
-	}
-	out.WriteEnd("}};");
-
-	out.Nl();
-
-	size_t count = 0;
-	for (auto def : db.UserDefinitions())
-	{
-		out.WriteLine("extern ::DataModel::dtmdl_TypeInfo const dtmdl_{}_type_info;", def->Name());
-		++count;
-	}
-
-	out.WriteStart("constexpr inline ::std::array<::DataModel::dtmdl_TypeInfo const*, {}> dtmdl_types {{", count);
-	for (auto def : db.UserDefinitions())
-	{
-		out.WriteLine("&dtmdl_{}_type_info,", def->Name());
-	}
-	out.WriteEnd("}};");
-
-	for (auto def : db.Structs())
-	{
-		out.WriteLine("inline void dtmdl_MarkStruct({0}& obj);", def->QualifiedName());
-	}
 
 	set<TypeDefinition const*> closed_types;
 	vector<TypeDefinition const*> ordered_types;
@@ -421,6 +403,61 @@ string CppDeclarationFormat::Export(Database const& db)
 	}
 
 	out.Nl();
+	out.WriteLine("/// Basic reflection");
+	out.Nl();
+
+	out.WriteStart("enum mirror_tags {{");
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteLine("dtmdl_{}_Mirror_Tag,", def->Name());
+	}
+	out.WriteEnd("}};");
+
+	out.Nl();
+
+	size_t count = 0;
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteLine("extern ::DataModel::TypeInfo const dtmdl_{}_type_info;", def->Name());
+		++count;
+	}
+
+	out.WriteStart("constexpr inline ::std::array<::DataModel::TypeInfo const*, {}> dtmdl_types {{", count);
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteLine("&dtmdl_{}_type_info,", def->Name());
+	}
+	out.WriteEnd("}};");
+	out.Nl();
+
+	for (auto def : db.Structs())
+	{
+		out.WriteLine("inline void dtmdl_MarkStruct({0}& obj);", def->QualifiedName());
+	}
+	out.Nl();
+
+	for (auto klass : db.Classes())
+	{
+		out.WriteStart("inline void {}::dtmdl_Mark() noexcept {{", klass->Name());
+		out.WriteLine("using ::DataModel::dtmdl_Mark;");
+		for (auto& field : klass->Fields())
+		{
+			out.WriteLine("dtmdl_Mark(this->{});", MemberName(db, field.get()));
+		}
+		out.WriteEnd("}}");
+		out.WriteLine("inline ::DataModel::TypeInfo const* {0}::dtmdl_Type() const noexcept {{ return &dtmdl_{0}_type_info; }}", klass->Name());
+
+		if (klass->Flags.contain(ClassFlags::CreateIsAs))
+		{
+			for (auto derived_class : db.Classes() | views::filter([klass](auto potential_child) { return potential_child->IsChildOf(klass); }))
+			{
+				out.WriteLine("inline bool {1}::Is{0}() const noexcept {{ return this->dtmdl_Type() == &dtmdl_{0}_type_info; }}", derived_class->Name(), klass->Name());
+				out.WriteLine("inline auto {1}::As{0}() const noexcept -> ::DataModel::NativeTypes::Ref<{0} const> {{ return Is{0}() ? reinterpret_cast<{0} const*>(this) : nullptr; }}", derived_class->Name(), klass->Name());
+				out.WriteLine("inline auto {1}::As{0}() noexcept -> ::DataModel::NativeTypes::Ref<{0}> {{ return Is{0}() ? reinterpret_cast<{0}*>(this) : nullptr; }}", derived_class->Name(), klass->Name());
+			}
+		}
+	}
+	out.Nl();
 
 	for (auto def : db.Structs())
 	{
@@ -431,6 +468,33 @@ string CppDeclarationFormat::Export(Database const& db)
 			out.WriteLine("dtmdl_Mark(obj.{});", field->Name);
 		}
 		out.WriteEnd("}}");
+	}
+
+	for (auto def : db.UserDefinitions())
+	{
+		out.WriteStart("static inline ::DataModel::TypeInfo const dtmdl_{}_type_info = {{", def->Name());
+		out.WriteLine(".Schema = {{}},");
+		out.WriteLine(".Name = \"{}\",", def->Name());
+		out.WriteLine(".Flags = {{}},");
+		out.WriteLine(".BaseType = {},", ToCppTypeReference(def->BaseType()));
+		out.WriteLine(".TypeType = ::DataModel::DefinitionType::{},", magic_enum::enum_name(def->Type()));
+		out.WriteLine(".SizeOf = sizeof({}),", def->QualifiedName());
+		out.WriteLine(".AlignOf = alignof({}),", def->QualifiedName());
+		switch (def->Type())
+		{
+		case DefinitionType::Class:
+			out.WriteLine(".Constructor = [](void* mem) {{ dtmdl_reflection::Construct{}(mem); }},", def->Name());
+			out.WriteLine(".Destructor = [](void* mem) {{ dtmdl_reflection::Destruct{}(mem);  }},", def->Name());
+			break;
+		default:
+			out.WriteLine(".Constructor = [](void* mem) {{ new(mem) {}; }},", def->QualifiedName());
+			out.WriteLine(".Destructor = [](void* mem) {{ new(mem) {};  }},", def->QualifiedName());
+			break;
+		}
+		out.WriteStart(".Members = {{");
+		out.WriteEnd("}},");
+		out.WriteLine(".TypeIndex = typeid({})", def->QualifiedName());
+		out.WriteEnd("}};");
 	}
 
 	return FinishOutput(db);
@@ -591,8 +655,8 @@ string CppReflectionFormat::Export(Database const& db)
 		out.Nl();
 		out.WriteLine("/// {}", klass->QualifiedName());
 		
-		out.WriteLine("static {0}* New{1}() {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
-		out.WriteLine("static {0}* New(::std::type_identity<{0}>) {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static [[nodiscard]] {0}* New{1}() {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
+		out.WriteLine("static [[nodiscard]] {0}* New(::std::type_identity<{0}>) {{ return new {0}(); }}", klass->QualifiedName(), klass->Name());
 		out.WriteLine("static {0}* Construct{1}(void* memory) {{ return new (memory){0}(); }}", klass->QualifiedName(), klass->Name());
 		out.WriteLine("static void Destruct{1}(void* memory) {{ reinterpret_cast<{0}*>(memory)->~{1}(); }}", klass->QualifiedName(), klass->Name());
 		out.WriteLine("static void Destruct({0}* memory) {{ memory->~{1}(); }}", klass->QualifiedName(), klass->Name());
